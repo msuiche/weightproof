@@ -28,7 +28,7 @@ fn stored_request_matches_oracle_facts() {
     assert_eq!(req.t(), 64);
     assert_eq!(req.r, 60);
     assert_eq!(req.e, 64);
-    assert_eq!(req.checked_indices(), 61..64, "oracle prints tokens=61..63");
+    assert_eq!(req.checked_indices(), 61..=63, "oracle prints tokens=61..63");
     assert_eq!(req.checked_tokens().len(), 3);
     assert_eq!(req.tokens[0], 243, "first word from xxd: 0xf3");
 }
