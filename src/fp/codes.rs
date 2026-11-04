@@ -39,6 +39,66 @@ fn pow2_neg(bits: u32) -> f64 {
     }
 }
 
+/// Public no_std math helpers for sibling modules (analysis).
+pub fn sqrt_pub(x: f64) -> f64 {
+    sqrt(x)
+}
+
+pub fn pow2_neg_pub(bits: u32) -> f64 {
+    pow2_neg(bits)
+}
+
+pub fn ceil_pub(x: f64) -> f64 {
+    libm::ceil(x)
+}
+
+pub fn pow_u64_pub(base: f64, exp: u64) -> f64 {
+    pow_u64(base, exp)
+}
+
+/// Anything the formulas read as a code: a length and the k of the rate
+/// formula. Two instantiations: `CodeSize` (a code with message+randomness)
+/// and `Word` (a code seen through `word_of`/`repeated`).
+pub trait Code {
+    fn log_n(&self) -> u32;
+    fn k(&self) -> u64;
+    fn n(&self) -> u64 {
+        1u64 << self.log_n()
+    }
+}
+
+/// A code as the formulas read it: length `2^log_n` and rate parameter k.
+/// `repeated` models a short row committed as copies in a longer tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Word {
+    pub log_n: u32,
+    pub k: u64,
+}
+
+impl Code for Word {
+    fn log_n(&self) -> u32 {
+        self.log_n
+    }
+    fn k(&self) -> u64 {
+        self.k
+    }
+}
+
+/// `word_of`: the code itself as a formula input.
+pub fn word_of(code: &CodeSize) -> Word {
+    Word { log_n: code.log_n, k: code.k() }
+}
+
+/// A code of length `2^log_n` with every codeword written `2^(log_n - code.log_n)`
+/// times: same k/n of the formulas, for distances/list sizes/counts.
+pub fn repeated(code: &CodeSize, log_n: u32) -> Word {
+    if log_n <= code.log_n {
+        word_of(code)
+    } else {
+        Word { log_n, k: code.k() << (log_n - code.log_n) }
+    }
+}
+
 /// A code's sizes: length `n = 2^log_n`, message length `ell`,
 /// `r` random coordinates of the zero-knowledge encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +108,15 @@ pub struct CodeSize {
     pub r: u64,
     /// Symbols/messages/randomness in the extension field E.
     pub over_E: bool,
+}
+
+impl Code for CodeSize {
+    fn log_n(&self) -> u32 {
+        self.log_n
+    }
+    fn k(&self) -> u64 {
+        self.dim() - 1
+    }
 }
 
 impl CodeSize {
@@ -65,15 +134,19 @@ impl CodeSize {
         self.ell + self.r
     }
 
-    /// The formulas' k: dimension minus one (plain RS).
-    pub fn k(&self) -> u64 {
-        self.dim() - 1
-    }
-
     /// Random tail needed to hide `t` opened positions (plain RS: t).
     pub fn tail_for(t: u64) -> u64 {
         t
     }
+}
+
+/// Where a mutual-correlated-agreement count comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CountSource {
+    /// Within a third of the minimum distance (proved lemma).
+    Third,
+    /// ePrint 2025/2055, Theorem 4.6, taken as given.
+    Johnson,
 }
 
 /// A code at one relative distance, with the theorem-on-codes count and the
@@ -92,11 +165,12 @@ pub struct Proximity {
     pub list: u64,
     /// Mutual-correlated-agreement count (ePrint 2025/2055, Thm 4.6, M = 1).
     pub count: f64,
+    pub source: CountSource,
 }
 
 /// `count = (2 M^5 + 3 M delta rho) / (3 rho^1.5) * n + M / sqrt(rho)`,
 /// with M = m + 1/2.
-pub fn johnson_count(code: &CodeSize, rho: f64, delta: f64, m: u64) -> f64 {
+pub fn johnson_count<C: Code>(code: &C, rho: f64, delta: f64, m: u64) -> f64 {
     let big_m = m as f64 + 0.5;
     let root = sqrt(rho);
     (2.0 * pow_u64(big_m, 5) + 3.0 * big_m * delta * rho) / (3.0 * rho * root)
@@ -120,7 +194,7 @@ pub fn johnson_list(agree: f64, lambda: f64) -> Option<u64> {
 
 /// The code at the distance that `m` gives: `1 - delta = sqrt(rho)(1 + 1/m)`.
 /// `None` if m < 3 or the code is trivial (k >= n).
-pub fn johnson(code: &CodeSize, m: u64) -> Option<Proximity> {
+pub fn johnson<C: Code>(code: &C, m: u64) -> Option<Proximity> {
     if m < 3 || code.k() >= code.n() {
         return None;
     }
@@ -138,6 +212,7 @@ pub fn johnson(code: &CodeSize, m: u64) -> Option<Proximity> {
         m,
         list,
         count: johnson_count(code, rho, delta, m),
+        source: CountSource::Johnson,
     })
 }
 
