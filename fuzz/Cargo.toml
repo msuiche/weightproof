@@ -1,0 +1,30 @@
+[package]
+name = "weightproof-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+weightproof = { path = "..", default-features = false, features = ["alloc"] }
+
+[[bin]]
+name = "fp_request"
+path = "fuzz_targets/fp_request.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fp_policy"
+path = "fuzz_targets/fp_policy.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fp_proof_head"
+path = "fuzz_targets/fp_proof_head.rs"
+test = false
+doc = false

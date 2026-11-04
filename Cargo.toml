@@ -1,0 +1,23 @@
+[package]
+name = "weightproof"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "Provable LLM inference: proofs that committed weights (+ GLP steering) produced served tokens"
+
+[features]
+default = ["std"]
+# std enables CLI and convenience APIs. The verifier core builds no_std+alloc
+# (D6): `cargo check --no-default-features --target thumbv7em-none-eabi`.
+std = ["alloc"]
+alloc = []
+# prover (later): GPU/host proving code, never a dependency of the verifier core.
+prover = ["std"]
+
+[dependencies]
+
+[dev-dependencies]
+
+[profile.release]
+lto = true

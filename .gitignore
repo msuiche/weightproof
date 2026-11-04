@@ -1,3 +1,6 @@
 spikes/whir/
 target/
 .DS_Store
+spikes/flashprove/
+fuzz/artifacts/
+fuzz/corpus/
