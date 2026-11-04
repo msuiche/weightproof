@@ -68,7 +68,7 @@ fn scopes(lin: &LinLayoutInput) -> (Scope, Scope) {
 }
 
 /// LIN's first message, W and its sample.
-fn lin_first(
+pub(crate) fn lin_first(
     messages: &mut Vec<PlanMessage>,
     setting: &Setting,
     lin: &LinLayoutInput,
@@ -79,7 +79,7 @@ fn lin_first(
 
 /// LIN's shared chain: folded row, table columns, Omega, optional split and
 /// the folded/Omega proximity tests.
-fn lin_shared(
+pub(crate) fn lin_shared(
     messages: &mut Vec<PlanMessage>,
     setting: &Setting,
     lin: &LinLayoutInput,
@@ -159,7 +159,7 @@ fn lin_shared(
 }
 
 /// LIN's request-own second chain.
-fn lin_second(
+pub(crate) fn lin_second(
     messages: &mut Vec<PlanMessage>,
     setting: &Setting,
     lin: &LinLayoutInput,

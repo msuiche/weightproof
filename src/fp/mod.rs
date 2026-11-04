@@ -8,8 +8,8 @@
 //!
 //! Scope of the current increments: request/parameter/version/field parsing;
 //! configuration and commitment IDs; group/stage derivation; key/leaf/proof
-//! byte-layout composition; complete LINK/leaf and key planning; and exact
-//! structural walking from drawn positions. This is NOT yet a cryptographic verifier:
+//! byte-layout composition; complete LINK/leaf, key, and request-proof planning;
+//! and exact structural walking from drawn positions. This is NOT yet a cryptographic verifier:
 //! transcript execution, field validation and proof verification land against
 //! the same ground truth. No layout or parse result claims a proof is valid.
 
@@ -27,7 +27,9 @@ pub mod layout;
 pub mod plan;
 pub mod policy;
 pub mod proof;
+pub mod proof_plan;
 pub mod request;
+pub mod subproof;
 pub mod version;
 pub mod walk;
 

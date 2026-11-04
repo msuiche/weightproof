@@ -34,7 +34,12 @@ impl Default for PscSize {
     }
 }
 
-fn field_nonce(messages: &mut Vec<PlanMessage>, setting: &Setting, scope: Scope, context: &str) {
+pub(crate) fn field_nonce(
+    messages: &mut Vec<PlanMessage>,
+    setting: &Setting,
+    scope: Scope,
+    context: &str,
+) {
     if let Some(nonce) = nonce(context, setting.work_field[scope as usize]) {
         messages.push(nonce);
     }
@@ -290,6 +295,38 @@ pub fn plan_member_rows(
         plan_batt(messages, setting, scope, context, k_col)?;
     }
     Ok(())
+}
+
+/// ZERO's challenge; no prover bytes.
+pub fn plan_zero(messages: &mut Vec<PlanMessage>, setting: &Setting, scope: Scope, context: &str) {
+    field_nonce(messages, setting, scope, context);
+}
+
+/// LINE's challenge; no prover bytes.
+pub fn plan_line(messages: &mut Vec<PlanMessage>, setting: &Setting, scope: Scope, context: &str) {
+    field_nonce(messages, setting, scope, context);
+}
+
+/// JOIN's challenge; no prover bytes.
+pub fn plan_join(messages: &mut Vec<PlanMessage>, setting: &Setting, scope: Scope, context: &str) {
+    field_nonce(messages, setting, scope, context);
+}
+
+/// BATΣ's batching challenge; no prover bytes.
+pub fn plan_bat_sigma(
+    messages: &mut Vec<PlanMessage>,
+    setting: &Setting,
+    scope: Scope,
+    context: &str,
+) {
+    field_nonce(messages, setting, scope, context);
+}
+
+/// RNG's smallness matrix nonce when that work is enabled; no prover bytes.
+pub fn plan_rng(messages: &mut Vec<PlanMessage>, setting: &Setting, scope: Scope, context: &str) {
+    if let Some(nonce) = crate::fp::plan::nonce(context, setting.work_small[scope as usize]) {
+        messages.push(nonce);
+    }
 }
 
 /// SPLIT's target; its empty verifier round adds no bytes.

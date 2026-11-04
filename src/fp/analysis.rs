@@ -36,6 +36,8 @@ pub struct Setting {
     pub work_sample: [u32; 3],
     /// work field per Scope (all zero in the example).
     pub work_field: [u32; 3],
+    /// work smallness per Scope (all zero in the example).
+    pub work_small: [u32; 3],
     /// Whether the verifier fixes one round-polynomial coefficient, so two E
     /// coefficients are sent instead of three (setting.saved_coefficient).
     pub saved_coefficient: bool,
@@ -51,6 +53,7 @@ impl Setting {
             work_closeness: [0, 0, 0],
             work_sample: [0, 0, 0],
             work_field: [0, 0, 0],
+            work_small: [0, 0, 0],
             saved_coefficient: true,
         }
     }

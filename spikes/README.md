@@ -47,6 +47,10 @@ structural walker consumes the stored 536952-byte leaf exactly. Key layout:
 `spikes/plans/key-openings.txt` records all 19 opening lists from a
 `PART PASSED: key` run; the Rust planner matches all 3583 fields and the
 1120888-byte maximum, and the walker consumes the stored 1096408-byte key exactly.
+Request layout: `spikes/plans/proof-openings.txt` records the 35 request-stage
+opening lists from a full `YES` run; the Rust planner matches all 7772 fields
+and the 4279884-byte maximum, and the walker consumes the stored 4145300-byte
+proof exactly.
 
 Negative corpus for later increments: `examples/rejected-proofs/`
 (`altered_copies.tsv`, `every_kind_of_item.tsv`, `try_altered_copies.py`).
