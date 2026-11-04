@@ -1,4 +1,4 @@
-# TODOS — zkvm-inference
+# TODOS — weightproof
 
 Captured by /plan-eng-review, 2026-11-03/04. Plan state: D1–D16 decisions applied
 (incl. codex outside-voice findings). First work: D11 FlashProve reproduction +

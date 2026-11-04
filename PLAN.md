@@ -1,4 +1,4 @@
-# PLAN — awesome-weightproof
+# PLAN — weightproof
 
 Provable LLM inference in Rust: prove that a response came from committed model
 weights, without revealing the weights, with cheap CPU verification.
