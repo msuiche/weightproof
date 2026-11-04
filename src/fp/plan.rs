@@ -15,31 +15,31 @@ use crate::fp::{
     layout::{ChainPlan, FilePlan, MessageKind, OpeningSize, PlanMessage},
 };
 
-const E_BYTES: u64 = 24;
-const F_BYTES: u64 = 8;
-const DIGEST_BYTES: u64 = 32;
-const SALT_BYTES: u64 = 40;
-const NONCE_BYTES: u64 = 8;
+pub(crate) const E_BYTES: u64 = 24;
+pub(crate) const F_BYTES: u64 = 8;
+pub(crate) const DIGEST_BYTES: u64 = 32;
+pub(crate) const SALT_BYTES: u64 = 40;
+pub(crate) const NONCE_BYTES: u64 = 8;
 
-fn scalars(name: &str, context: &str, count: u64) -> Result<PlanMessage, FpError> {
+pub(crate) fn scalars(name: &str, context: &str, count: u64) -> Result<PlanMessage, FpError> {
     let bytes = count.checked_mul(E_BYTES).ok_or(FpError::Range {
         context: "plan-scalar-bytes",
     })?;
     Ok(PlanMessage::fixed(name, context, MessageKind::Scalars, bytes).in_chain())
 }
 
-fn answers(context: &str, count: u64) -> Result<PlanMessage, FpError> {
+pub(crate) fn answers(context: &str, count: u64) -> Result<PlanMessage, FpError> {
     let bytes = count.checked_mul(E_BYTES).ok_or(FpError::Range {
         context: "plan-answer-bytes",
     })?;
     Ok(PlanMessage::fixed("sample answers", context, MessageKind::Answers, bytes).in_chain())
 }
 
-fn root(context: &str) -> PlanMessage {
+pub(crate) fn root(context: &str) -> PlanMessage {
     PlanMessage::fixed("root", context, MessageKind::Root, DIGEST_BYTES).in_chain()
 }
 
-fn nonce(context: &str, work_bits: u32) -> Option<PlanMessage> {
+pub(crate) fn nonce(context: &str, work_bits: u32) -> Option<PlanMessage> {
     (work_bits != 0).then(|| PlanMessage::fixed("nonce", context, MessageKind::Nonce, NONCE_BYTES))
 }
 

@@ -43,7 +43,10 @@ r=60, e=64, checked tokens 61..63 end-exclusive), y=199, proof head
 18 layout call lines. LINK layout: `spikes/plans/leaf-openings.txt` records
 all five opening lists, in draw order, from a `PART PASSED: leaf` oracle run;
 the Rust planner matches all 43 fields and the 546112-byte maximum, and the
-structural walker consumes the stored 536952-byte leaf exactly.
+structural walker consumes the stored 536952-byte leaf exactly. Key layout:
+`spikes/plans/key-openings.txt` records all 19 opening lists from a
+`PART PASSED: key` run; the Rust planner matches all 3583 fields and the
+1120888-byte maximum, and the walker consumes the stored 1096408-byte key exactly.
 
 Negative corpus for later increments: `examples/rejected-proofs/`
 (`altered_copies.tsv`, `every_kind_of_item.tsv`, `try_altered_copies.py`).
