@@ -16,6 +16,8 @@ alloc = []
 prover = ["std"]
 
 [dependencies]
+# no_std math (sqrt/floor); integer-exponent pow is implemented by squaring.
+libm = "0.2"
 
 [dev-dependencies]
 

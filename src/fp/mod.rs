@@ -13,6 +13,7 @@
 
 pub mod error;
 pub mod field;
+pub mod codes;
 pub mod policy;
 pub mod proof;
 pub mod request;
