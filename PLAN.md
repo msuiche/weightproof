@@ -28,9 +28,13 @@ Matt's projective-steering project (GLP vectors, vLLM/SGLang plugins, DGX Spark
   deploy) are the reproduction + prover-benchmark deployment path — no new
   infra needed.
 - **Commitment metadata (codex #8):** must bind checkpoint revision + quant
-  format (NVFP4/MXFP4) + pruning. REAP-pruned builds change the circuit —
-  weightless rejects them for steering; weightproof must reject them for
-  proving (or bind the pruned topology explicitly).
+  format (NVFP4/MXFP4) + pruning. **REAP-pruned builds are rejected** (confirmed
+  2026-11-04): deleting experts changes the circuit — the GLP vector no longer
+  matches, the provable computation is a different model, and the degraded
+  behavior is not worth supporting. Reject at commitment time with a named
+  error, same discipline as weightless's lane rejection. Escape hatch if ever
+  needed: bind the pruned topology explicitly as a new model identity, never
+  silently prove against the unpruned commitment.
 
 
 Status: reviewed (plan-eng-review + codex outside voice), all decisions applied.
