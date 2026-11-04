@@ -59,7 +59,10 @@ mod tests {
     #[test]
     fn rejects_bad_tag() {
         let bytes = head_bytes(b"XXXX", b"H821", 0);
-        assert!(matches!(ProofHead::parse(&bytes), Err(FpError::BadTag { .. })));
+        assert!(matches!(
+            ProofHead::parse(&bytes),
+            Err(FpError::BadTag { .. })
+        ));
     }
 
     #[test]

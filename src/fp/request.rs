@@ -23,7 +23,9 @@ impl RequestFile {
     /// `r >= e`, and `e` beyond the token list — fail closed, named reasons.
     pub fn parse(bytes: &[u8]) -> Result<Self, FpError> {
         if bytes.len() % 4 != 0 {
-            return Err(FpError::BadLength { context: "request-words" });
+            return Err(FpError::BadLength {
+                context: "request-words",
+            });
         }
         let word_count = bytes.len() / 4;
         if word_count < 3 {
@@ -45,13 +47,19 @@ impl RequestFile {
         let t = tokens.len() as u32;
         // cp_verify usage: T = 2^lt tokens, then r and e with r < e <= T.
         if !t.is_power_of_two() {
-            return Err(FpError::Range { context: "t-power-of-two" });
+            return Err(FpError::Range {
+                context: "t-power-of-two",
+            });
         }
         if r >= e {
-            return Err(FpError::Range { context: "r-before-e" });
+            return Err(FpError::Range {
+                context: "r-before-e",
+            });
         }
         if e > t {
-            return Err(FpError::Range { context: "e-within-tokens" });
+            return Err(FpError::Range {
+                context: "e-within-tokens",
+            });
         }
         Ok(Self { tokens, r, e })
     }
@@ -160,7 +168,9 @@ mod tests {
     fn rejects_non_power_of_two_t() {
         assert!(matches!(
             RequestFile::parse(&req_bytes(&[1, 2, 3], 0, 2)),
-            Err(FpError::Range { context: "t-power-of-two" })
+            Err(FpError::Range {
+                context: "t-power-of-two"
+            })
         ));
     }
 
@@ -168,7 +178,9 @@ mod tests {
     fn rejects_r_after_e() {
         assert!(matches!(
             RequestFile::parse(&req_bytes(&[1, 2, 3, 4], 3, 1)),
-            Err(FpError::Range { context: "r-before-e" })
+            Err(FpError::Range {
+                context: "r-before-e"
+            })
         ));
         assert!(RequestFile::parse(&req_bytes(&[1, 2, 3, 4], 2, 2)).is_err());
     }
@@ -177,7 +189,9 @@ mod tests {
     fn rejects_e_beyond_tokens() {
         assert!(matches!(
             RequestFile::parse(&req_bytes(&[1, 2, 3, 4], 0, 5)),
-            Err(FpError::Range { context: "e-within-tokens" })
+            Err(FpError::Range {
+                context: "e-within-tokens"
+            })
         ));
     }
 
@@ -186,7 +200,12 @@ mod tests {
         // Regression: r + 1 used to overflow here (fuzz artifact
         // crash-68eeb1a2). r = u32::MAX must be a clean rejection.
         let result = RequestFile::parse(&req_bytes(&[1, 2, 3, 4], u32::MAX, u32::MAX));
-        assert!(matches!(result, Err(FpError::Range { context: "r-before-e" })));
+        assert!(matches!(
+            result,
+            Err(FpError::Range {
+                context: "r-before-e"
+            })
+        ));
         assert!(RequestFile::parse(&req_bytes(&[1, 2, 3, 4], u32::MAX - 1, u32::MAX)).is_err());
     }
 

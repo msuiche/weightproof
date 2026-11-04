@@ -36,7 +36,10 @@ mod tests {
 
     #[test]
     fn accepts_canonical_elements() {
-        assert_eq!(FieldElement::parse(&0u64.to_le_bytes()), Ok(FieldElement(0)));
+        assert_eq!(
+            FieldElement::parse(&0u64.to_le_bytes()),
+            Ok(FieldElement(0))
+        );
         assert_eq!(
             FieldElement::parse(&(GOLDILOCKS_P - 1).to_le_bytes()),
             Ok(FieldElement(GOLDILOCKS_P - 1))

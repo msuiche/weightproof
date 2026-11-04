@@ -6,19 +6,28 @@
 //! - stored ground truth: `examples/accepted-proof/`, `examples/rejected-proofs/`
 //! - oracle: `bin-clang/cp_verify` (local macOS build, see spikes/ notes)
 //!
-//! Scope of this increment: request/parameter/version/field/proof-head parsing
-//! with fail-closed, named errors. This is NOT yet a cryptographic verifier;
-//! chain walking and proof verification land in later increments against the
-//! same ground truth. Nothing here claims a proof is valid.
+//! Scope of the current increments: request/parameter/version/field parsing;
+//! configuration and commitment IDs; group/stage derivation; key/leaf/proof
+//! byte-layout composition; complete LINK/leaf planning; and exact structural
+//! walking from drawn positions. This is NOT yet a cryptographic verifier:
+//! transcript execution, field validation and proof verification land against
+//! the same ground truth. No layout or parse result claims a proof is valid.
 
+pub mod analysis;
+pub mod blake2;
+pub mod chain;
+pub mod codes;
+pub mod digest;
 pub mod error;
 pub mod field;
-pub mod codes;
-pub mod analysis;
+pub mod heads;
+pub mod layout;
+pub mod plan;
 pub mod policy;
 pub mod proof;
 pub mod request;
 pub mod version;
+pub mod walk;
 
 pub use error::FpError;
 pub use field::{FieldElement, GOLDILOCKS_P};

@@ -62,8 +62,9 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
 
 ## 4. Review SF Tensor's PTX-in-Lean formalization (potential reuse, M2+)
 
-- **What:** Review https://sf-tensor.com/engineering/formalizing-ptx (+ linked
-  paper) for reuse in verifying our GPU prover kernels in Lean.
+- **What:** Review https://sf-tensor.com/engineering/formalizing-ptx and the
+  paper https://sf-tensor.com/papers/formalizing-ptx.pdf for reuse in
+  verifying our GPU prover kernels in Lean.
 - **Why:** They formalize PTX semantics + the PTX memory consistency model in
   Lean 4 and prove GPU kernels correct with LLM-generated, machine-checked
   proofs — no `sorry`s, no user axioms. Directly relevant to our M2 GPU

@@ -33,7 +33,11 @@ pub enum FpError {
 impl fmt::Display for FpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Truncated { context, needed, available } => write!(
+            Self::Truncated {
+                context,
+                needed,
+                available,
+            } => write!(
                 f,
                 "truncated-{context}: needs {needed} bytes, has {available}"
             ),

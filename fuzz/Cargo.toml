@@ -28,3 +28,9 @@ name = "fp_proof_head"
 path = "fuzz_targets/fp_proof_head.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fp_layout"
+path = "fuzz_targets/fp_layout.rs"
+test = false
+doc = false

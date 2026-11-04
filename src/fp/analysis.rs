@@ -9,8 +9,8 @@
 use alloc::vec::Vec;
 
 use crate::fp::codes::{
-    johnson, johnson_count, johnson_list, positions, repeated, word_of, Code,
-    CodeSize, CountSource, Proximity, Word,
+    johnson, johnson_count, johnson_list, positions, repeated, word_of, Code, CodeSize,
+    CountSource, Proximity,
 };
 use crate::fp::error::FpError;
 use crate::fp::field::GOLDILOCKS_P;
@@ -36,6 +36,9 @@ pub struct Setting {
     pub work_sample: [u32; 3],
     /// work field per Scope (all zero in the example).
     pub work_field: [u32; 3],
+    /// Whether the verifier fixes one round-polynomial coefficient, so two E
+    /// coefficients are sent instead of three (setting.saved_coefficient).
+    pub saved_coefficient: bool,
 }
 
 impl Setting {
@@ -48,6 +51,7 @@ impl Setting {
             work_closeness: [0, 0, 0],
             work_sample: [0, 0, 0],
             work_field: [0, 0, 0],
+            saved_coefficient: true,
         }
     }
 
@@ -120,7 +124,11 @@ impl Analysis {
 
 fn shape_fault(g: &GroupSize) -> Option<&'static str> {
     if !g.has_mask() {
-        return if g.h != 0 { Some("mask rows without a mask code") } else { None };
+        return if g.h != 0 {
+            Some("mask rows without a mask code")
+        } else {
+            None
+        };
     }
     if g.mask.log_n > g.main.log_n {
         return Some("the mask code is longer than the main code");
@@ -171,7 +179,16 @@ pub fn at_distance<C: Code>(code: &C, agree: f64) -> Option<Proximity> {
     } else {
         1
     };
-    Some(Proximity { rho, agree, delta, eta, m, list, count, source: CountSource::Johnson })
+    Some(Proximity {
+        rho,
+        agree,
+        delta,
+        eta,
+        m,
+        list,
+        count,
+        source: CountSource::Johnson,
+    })
 }
 
 /// `analysis_at`: the group at `at`, mask code analysed at the same distance
@@ -318,7 +335,11 @@ pub fn group_holds(s: &Setting, scope: Scope, g: &GroupSize, load: &GroupLoad) -
     if a.bad() {
         return false;
     }
-    let worst = if g.k > 0 { fold_round_error(s, g, &a, 1) } else { base_error(s, g, &a) };
+    let worst = if g.k > 0 {
+        fold_round_error(s, g, &a, 1)
+    } else {
+        base_error(s, g, &a)
+    };
     let goal = s.goal_of(s.work_closeness, scope);
     worst <= goal
         && (load.messages as f64 * sample_error(s, a.list, load.cube_bits))
@@ -372,10 +393,59 @@ pub fn size_group(s: &Setting, scope: Scope, shape: &GroupSize, load: &GroupLoad
     g
 }
 
+/// Solve a group's random tails and position count together (derive.h
+/// `solve_group`). The returned stage-1 group and `t` are the inputs to
+/// `solve_stages`; both random tails hide `t` opened positions.
+pub fn solve_group(
+    s: &Setting,
+    scope: Scope,
+    shape: &GroupSize,
+    load: &GroupLoad,
+) -> Result<(GroupSize, u64), FpError> {
+    let mut t = 0u64;
+    for _turn in 0..32 {
+        let mut candidate = *shape;
+        candidate.main.r = CodeSize::tail_for(t);
+        candidate.mask.r = CodeSize::tail_for(t);
+        if candidate.main.dim() > candidate.main.n() || candidate.mask.dim() > candidate.mask.n() {
+            return Err(FpError::Range {
+                context: "group-code-overflow",
+            });
+        }
+        candidate = size_group(s, scope, &candidate, load);
+        if !group_holds(s, scope, &candidate, load) {
+            return Err(FpError::Range {
+                context: "group-no-distance",
+            });
+        }
+        let a = analysis_of_m(&candidate);
+        let next = positions(
+            a.at.agree,
+            s.target - s.query_work(scope),
+            crate::fp::codes::pow2_neg_pub(s.target + 30),
+            1,
+        )
+        .ok_or(FpError::Range {
+            context: "group-no-positions",
+        })?;
+        if next <= t {
+            return Ok((candidate, t));
+        }
+        t = next;
+    }
+    Err(FpError::Range {
+        context: "group-not-settled",
+    })
+}
+
 /// stage_cube_bits: variables of a sample's point on an oracle message.
 pub fn stage_cube_bits(g: &GroupSize) -> u32 {
     fn ceil_log2(x: u64) -> u32 {
-        if x <= 1 { 0 } else { 64 - (x - 1).leading_zeros() }
+        if x <= 1 {
+            0
+        } else {
+            64 - (x - 1).leading_zeros()
+        }
     }
     let a = g.k + ceil_log2(g.main.ell);
     if g.has_mask() {
@@ -404,11 +474,19 @@ pub struct StageChoice {
 }
 
 fn ceil_log2(x: u64) -> u32 {
-    if x <= 1 { 0 } else { 64 - (x - 1).leading_zeros() }
+    if x <= 1 {
+        0
+    } else {
+        64 - (x - 1).leading_zeros()
+    }
 }
 
 fn pow2_at_least(x: u64) -> u64 {
-    if x <= 1 { 1 } else { 1u64 << ceil_log2(x) }
+    if x <= 1 {
+        1
+    } else {
+        1u64 << ceil_log2(x)
+    }
 }
 
 /// `solve_stages`: stage shapes follow the fold; positions/random tails are
@@ -421,15 +499,31 @@ pub fn solve_stages(
     choices: &[StageChoice],
 ) -> Result<Vec<Stage>, FpError> {
     if choices.is_empty() || first.k == 0 {
-        return Err(FpError::Range { context: "stages-first-stage-fold" });
+        return Err(FpError::Range {
+            context: "stages-first-stage-fold",
+        });
     }
     let mut stages = Vec::with_capacity(choices.len() + 1);
-    stages.push(Stage { g: *first, t: first_t, r_ood: 0 });
+    stages.push(Stage {
+        g: *first,
+        t: first_t,
+        r_ood: 0,
+    });
     for (i, c) in choices.iter().enumerate() {
         let o = &stages[stages.len() - 1].g;
-        let mut n = Stage { g: *o, t: 0, r_ood: 0 };
-        if c.h > c.k || c.k > 32 || (i + 1 == choices.len() && c.k != 0) || (i + 1 < choices.len() && c.k == 0) {
-            return Err(FpError::Range { context: "stages-k-h-shape" });
+        let mut n = Stage {
+            g: *o,
+            t: 0,
+            r_ood: 0,
+        };
+        if c.h > c.k
+            || c.k > 32
+            || (i + 1 == choices.len() && c.k != 0)
+            || (i + 1 < choices.len() && c.k == 0)
+        {
+            return Err(FpError::Range {
+                context: "stages-k-h-shape",
+            });
         }
         n.g.k = c.k;
         n.g.h = c.h;
@@ -439,7 +533,9 @@ pub fn solve_stages(
         n.g.mask.over_E = true;
         let cut = 1u64 << c.k;
         if o.main.ell * o.slots % cut != 0 {
-            return Err(FpError::Range { context: "stages-fold-divisibility" });
+            return Err(FpError::Range {
+                context: "stages-fold-divisibility",
+            });
         }
         n.g.main.ell = o.main.ell * o.slots >> c.k;
         let carried = 2 * o.mask.ell + o.main.r * o.slots + 2 * o.mask.r;
@@ -453,7 +549,9 @@ pub fn solve_stages(
             n.g.main.r = CodeSize::tail_for(t);
             n.g.mask.r = CodeSize::tail_for(t);
             if n.g.main.dim() > n.g.main.n() || n.g.mask.dim() > n.g.mask.n() {
-                return Err(FpError::Range { context: "stages-code-overflow" });
+                return Err(FpError::Range {
+                    context: "stages-code-overflow",
+                });
             }
             let load = GroupLoad {
                 cube_bits: stage_cube_bits(&n.g),
@@ -465,7 +563,12 @@ pub fn solve_stages(
             let serves = group_holds(s, scope, &n.g, &load);
             let a = analysis_of_m(&n.g);
             let t2 = if serves {
-                positions(a.at.agree, s.target - s.query_work(scope), crate::fp::codes::pow2_neg_pub(s.target + 30), 1)
+                positions(
+                    a.at.agree,
+                    s.target - s.query_work(scope),
+                    crate::fp::codes::pow2_neg_pub(s.target + 30),
+                    1,
+                )
             } else {
                 None
             };
@@ -473,12 +576,16 @@ pub fn solve_stages(
                 Some(next) if next > t => {
                     t = next;
                     if t > (1u64 << 32) {
-                        return Err(FpError::Range { context: "stages-positions-unbounded" });
+                        return Err(FpError::Range {
+                            context: "stages-positions-unbounded",
+                        });
                     }
                 }
                 _ => {
                     if !serves {
-                        return Err(FpError::Range { context: "stages-no-distance" });
+                        return Err(FpError::Range {
+                            context: "stages-no-distance",
+                        });
                     }
                     settled = true;
                     break;
@@ -486,7 +593,9 @@ pub fn solve_stages(
             }
         }
         if !settled {
-            return Err(FpError::Range { context: "stages-not-settled" });
+            return Err(FpError::Range {
+                context: "stages-not-settled",
+            });
         }
         n.t = t;
         stages.push(n);
@@ -502,13 +611,31 @@ mod tests {
         Setting::example()
     }
 
-    fn group(name: &str, log_n: u32, ell: u64, r: u64, mask_log_n: u32, mask_ell: u64, k: u32) -> GroupSize {
+    fn group(
+        _name: &str,
+        log_n: u32,
+        ell: u64,
+        r: u64,
+        mask_log_n: u32,
+        mask_ell: u64,
+        k: u32,
+    ) -> GroupSize {
         GroupSize {
             k,
             h: 0,
             slots: 1,
-            main: CodeSize { log_n, ell, r, over_E: false },
-            mask: CodeSize { log_n: mask_log_n, ell: mask_ell, r, over_E: true },
+            main: CodeSize {
+                log_n,
+                ell,
+                r,
+                over_E: false,
+            },
+            mask: CodeSize {
+                log_n: mask_log_n,
+                ell: mask_ell,
+                r,
+                over_E: true,
+            },
             m: 0,
         }
     }
@@ -516,7 +643,11 @@ mod tests {
     #[test]
     fn size_group_recovers_oracle_m_for_link() {
         let g0 = group("link", 18, 131072, 218, 17, 8192, 9);
-        let load = GroupLoad { cube_bits: stage_cube_bits(&g0), messages: 8, batched_rows: 1 << 16 };
+        let load = GroupLoad {
+            cube_bits: stage_cube_bits(&g0),
+            messages: 8,
+            batched_rows: 1 << 16,
+        };
         let g = size_group(&setting(), Scope::Request, &g0, &load);
         assert_eq!(g.m, 517, "link group m from -plan request -shapes");
         let a = analysis_of_m(&g);
@@ -530,20 +661,32 @@ mod tests {
     fn size_group_recovers_oracle_m_for_committer_groups() {
         // once-folded: code 2^17, message 32768 + 97, m = 483, list 241, t = 97.
         let g0 = group("once-folded", 17, 32768, 97, 13, 64, 5);
-        let load = GroupLoad { cube_bits: stage_cube_bits(&g0), messages: 8, batched_rows: 1 << 16 };
+        let load = GroupLoad {
+            cube_bits: stage_cube_bits(&g0),
+            messages: 8,
+            batched_rows: 1 << 16,
+        };
         let g = size_group(&setting(), Scope::Commit, &g0, &load);
         assert_eq!(g.m, 483);
         let a = analysis_of_m(&g);
         assert_eq!(a.list, 241);
         // once-omega: code 2^18, message 16384 + 98, m = 277, list 415.
         let g0 = group("once-omega", 18, 16384, 98, 13, 64, 2);
-        let load = GroupLoad { cube_bits: stage_cube_bits(&g0), messages: 8, batched_rows: 1 << 16 };
+        let load = GroupLoad {
+            cube_bits: stage_cube_bits(&g0),
+            messages: 8,
+            batched_rows: 1 << 16,
+        };
         let g = size_group(&setting(), Scope::Commit, &g0, &load);
         assert_eq!(g.m, 277);
         assert_eq!(analysis_of_m(&g).list, 415);
         // ranges: code 2^22, message 262144 + 49, m = 158, list 238.
         let g0 = group("ranges", 22, 262144, 49, 16, 1024, 3);
-        let load = GroupLoad { cube_bits: stage_cube_bits(&g0), messages: 8, batched_rows: 1 << 16 };
+        let load = GroupLoad {
+            cube_bits: stage_cube_bits(&g0),
+            messages: 8,
+            batched_rows: 1 << 16,
+        };
         let g = size_group(&setting(), Scope::Commit, &g0, &load);
         assert_eq!(g.m, 158);
         assert_eq!(analysis_of_m(&g).list, 238);
@@ -554,10 +697,30 @@ mod tests {
         // stage 1 = link group, m = 517, t = 218.
         let first = group("link", 18, 131072, 218, 17, 8192, 9);
         let choices = [
-            StageChoice { k: 4, h: 3, log_n: 17, mask_log_n: 17 },
-            StageChoice { k: 3, h: 3, log_n: 16, mask_log_n: 16 },
-            StageChoice { k: 3, h: 3, log_n: 15, mask_log_n: 15 },
-            StageChoice { k: 0, h: 0, log_n: 15, mask_log_n: 15 },
+            StageChoice {
+                k: 4,
+                h: 3,
+                log_n: 17,
+                mask_log_n: 17,
+            },
+            StageChoice {
+                k: 3,
+                h: 3,
+                log_n: 16,
+                mask_log_n: 16,
+            },
+            StageChoice {
+                k: 3,
+                h: 3,
+                log_n: 15,
+                mask_log_n: 15,
+            },
+            StageChoice {
+                k: 0,
+                h: 0,
+                log_n: 15,
+                mask_log_n: 15,
+            },
         ];
         let stages = solve_stages(&setting(), Scope::Request, &first, 218, &choices).unwrap();
         assert_eq!(stages.len(), 5);
@@ -599,7 +762,12 @@ mod tests {
     #[test]
     fn at_distance_third_vs_johnson() {
         // High agreement (small delta) takes the proved THIRD count.
-        let code = CodeSize { log_n: 10, ell: 100, r: 10, over_E: false };
+        let code = CodeSize {
+            log_n: 10,
+            ell: 100,
+            r: 10,
+            over_E: false,
+        };
         let x = at_distance(&word_of(&code), 0.999).unwrap();
         assert_eq!(x.source, CountSource::Third);
         assert_eq!(x.m, 0);
@@ -616,9 +784,25 @@ mod tests {
     fn rejects_bad_stage_choices() {
         let first = group("link", 18, 131072, 218, 17, 8192, 9);
         assert!(solve_stages(&setting(), Scope::Request, &first, 218, &[]).is_err());
-        let bad = [StageChoice { k: 2, h: 3, log_n: 17, mask_log_n: 17 }];
-        assert!(solve_stages(&setting(), Scope::Request, &first, 218, &bad).is_err(), "h > k");
-        let bad_last = [StageChoice { k: 1, h: 0, log_n: 17, mask_log_n: 17 }];
-        assert!(solve_stages(&setting(), Scope::Request, &first, 218, &bad_last).is_err(), "last stage must have k = 0");
+        let bad = [StageChoice {
+            k: 2,
+            h: 3,
+            log_n: 17,
+            mask_log_n: 17,
+        }];
+        assert!(
+            solve_stages(&setting(), Scope::Request, &first, 218, &bad).is_err(),
+            "h > k"
+        );
+        let bad_last = [StageChoice {
+            k: 1,
+            h: 0,
+            log_n: 17,
+            mask_log_n: 17,
+        }];
+        assert!(
+            solve_stages(&setting(), Scope::Request, &first, 218, &bad_last).is_err(),
+            "last stage must have k = 0"
+        );
     }
 }

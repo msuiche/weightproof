@@ -8,7 +8,10 @@
 
 use alloc::{string::String, vec::Vec};
 
-use crate::fp::{error::FpError, version::{Version, H821}};
+use crate::fp::{
+    error::FpError,
+    version::{Version, H821},
+};
 
 /// Keywords whose lines carry a name before the integers
 /// (`group link …`, `stages link …`, `work positions …`).
@@ -55,32 +58,51 @@ impl Policy {
                 continue;
             }
             let mut words = line.split_whitespace();
-            let keyword = words.next().ok_or(FpError::Policy { context: "empty-line" })?;
+            let keyword = words.next().ok_or(FpError::Policy {
+                context: "empty-line",
+            })?;
             if index == 0 {
                 if keyword != "version" {
-                    return Err(FpError::Policy { context: "version-first-line" });
+                    return Err(FpError::Policy {
+                        context: "version-first-line",
+                    });
                 }
-                let word = words.next().ok_or(FpError::Policy { context: "version-missing" })?;
+                let word = words.next().ok_or(FpError::Policy {
+                    context: "version-missing",
+                })?;
                 version = Some(Version::parse(word.as_bytes())?);
                 if words.next().is_some() {
-                    return Err(FpError::Policy { context: "version-extra-words" });
+                    return Err(FpError::Policy {
+                        context: "version-extra-words",
+                    });
                 }
                 continue;
             }
             if keyword == "version" {
-                return Err(FpError::Policy { context: "version-repeated" });
+                return Err(FpError::Policy {
+                    context: "version-repeated",
+                });
             }
             if CALL_KEYWORDS.contains(&keyword) {
-                let name = words.next().ok_or(FpError::Policy { context: "call-name" })?;
-                let target = words.next().ok_or(FpError::Policy { context: "call-target" })?;
+                let name = words.next().ok_or(FpError::Policy {
+                    context: "call-name",
+                })?;
+                let target = words.next().ok_or(FpError::Policy {
+                    context: "call-target",
+                })?;
                 let call = CallLine {
                     keyword: String::from(keyword),
                     name: String::from(name),
                     target: String::from(target),
                     symbols: words.map(String::from).collect(),
                 };
-                if calls.iter().any(|c| c.keyword == call.keyword && c.name == call.name) {
-                    return Err(FpError::Policy { context: "duplicate-call" });
+                if calls
+                    .iter()
+                    .any(|c| c.keyword == call.keyword && c.name == call.name)
+                {
+                    return Err(FpError::Policy {
+                        context: "duplicate-call",
+                    });
                 }
                 calls.push(call);
                 continue;
@@ -89,30 +111,49 @@ impl Policy {
             let mut name = None;
             let mut rest = words.peekable();
             if NAMED_KEYWORDS.contains(&keyword) {
-                let named = rest.next().ok_or(FpError::Policy { context: "name-missing" })?;
+                let named = rest.next().ok_or(FpError::Policy {
+                    context: "name-missing",
+                })?;
                 name = Some(String::from(named));
             }
             for word in rest {
-                let value = word
-                    .parse::<u64>()
-                    .map_err(|_| FpError::Policy { context: "integer-argument" })?;
+                let value = word.parse::<u64>().map_err(|_| FpError::Policy {
+                    context: "integer-argument",
+                })?;
                 args.push(value);
             }
-            let new_line = PolicyLine { keyword: String::from(keyword), name, args };
-            if lines.iter().any(|l| l.keyword == new_line.keyword && l.name == new_line.name) {
-                return Err(FpError::Policy { context: "duplicate-keyword" });
+            let new_line = PolicyLine {
+                keyword: String::from(keyword),
+                name,
+                args,
+            };
+            if lines
+                .iter()
+                .any(|l| l.keyword == new_line.keyword && l.name == new_line.name)
+            {
+                return Err(FpError::Policy {
+                    context: "duplicate-keyword",
+                });
             }
             lines.push(new_line);
         }
-        let version = version.ok_or(FpError::Policy { context: "version-missing" })?;
-        let policy = Self { version, lines, calls };
+        let version = version.ok_or(FpError::Policy {
+            context: "version-missing",
+        })?;
+        let policy = Self {
+            version,
+            lines,
+            calls,
+        };
         policy.require_singleton("listed", 0)?;
         policy.require_singleton("answers", 1)?;
         policy.require_present("sec")?;
         policy.require_present("salt")?;
         if let Some(record) = policy.get("record") {
             if record.len() != 1 || record[0] > 1 {
-                return Err(FpError::Policy { context: "record-bool" });
+                return Err(FpError::Policy {
+                    context: "record-bool",
+                });
             }
         }
         Ok(policy)
@@ -178,10 +219,22 @@ mod tests {
         assert_eq!(policy.sec(), Some(128));
         assert_eq!(policy.salt_len(), Some(40));
         assert!(policy.record());
-        assert_eq!(policy.get_named("work", "positions"), Some(&[20, 28, 32][..]));
-        assert_eq!(policy.get_named("group", "link"), Some(&[1, 18, 17, 17, 13][..]));
-        assert_eq!(policy.get_named("group", "folded"), Some(&[1, 17, 15, 13, 6][..]));
-        assert_eq!(policy.get_named("stages", "link"), Some(&[4, 3, 17, 17, 3, 3, 16, 16][..]));
+        assert_eq!(
+            policy.get_named("work", "positions"),
+            Some(&[20, 28, 32][..])
+        );
+        assert_eq!(
+            policy.get_named("group", "link"),
+            Some(&[1, 18, 17, 17, 13][..])
+        );
+        assert_eq!(
+            policy.get_named("group", "folded"),
+            Some(&[1, 17, 15, 13, 6][..])
+        );
+        assert_eq!(
+            policy.get_named("stages", "link"),
+            Some(&[4, 3, 17, 17, 3, 3, 16, 16][..])
+        );
         assert_eq!(policy.get_named("group", "own"), None);
     }
 
@@ -200,12 +253,18 @@ mod tests {
 
     #[test]
     fn rejects_bad_record() {
-        assert!(Policy::parse(b"version H821\nsec 128\nsalt 40\nlisted 0\nanswers 1\nrecord 3\n").is_err());
+        assert!(
+            Policy::parse(b"version H821\nsec 128\nsalt 40\nlisted 0\nanswers 1\nrecord 3\n")
+                .is_err()
+        );
     }
 
     #[test]
     fn rejects_duplicates_and_bad_integers() {
-        assert!(Policy::parse(b"version H821\nsec 128\nsec 128\nsalt 40\nlisted 0\nanswers 1\n").is_err());
+        assert!(
+            Policy::parse(b"version H821\nsec 128\nsec 128\nsalt 40\nlisted 0\nanswers 1\n")
+                .is_err()
+        );
         assert!(Policy::parse(b"version H821\nsec abc\nsalt 40\nlisted 0\nanswers 1\n").is_err());
         assert!(Policy::parse(b"version H821\nsec -1\nsalt 40\nlisted 0\nanswers 1\n").is_err());
         assert!(Policy::parse(b"version H821\nsec 128\nsalt 40\nlisted 0\nanswers 1\ngroup link 1 2\ngroup link 3 4\n").is_err(), "same (keyword, name) twice must fail");
@@ -218,7 +277,10 @@ mod tests {
 
     #[test]
     fn rejects_non_utf8() {
-        assert!(matches!(Policy::parse(&[0xff, 0xfe]), Err(FpError::NotUtf8)));
+        assert!(matches!(
+            Policy::parse(&[0xff, 0xfe]),
+            Err(FpError::NotUtf8)
+        ));
     }
 
     #[test]
@@ -234,6 +296,10 @@ mod tests {
     #[test]
     fn rejects_duplicate_and_incomplete_calls() {
         assert!(Policy::parse(b"version H821\nsec 128\nsalt 40\nlisted 0\nanswers 1\ncall R16a R16 G\ncall R16a R16 U\n").is_err(), "duplicate (keyword, name) must fail");
-        assert!(Policy::parse(b"version H821\nsec 128\nsalt 40\nlisted 0\nanswers 1\ncall R16a\n").is_err(), "missing target must fail");
+        assert!(
+            Policy::parse(b"version H821\nsec 128\nsalt 40\nlisted 0\nanswers 1\ncall R16a\n")
+                .is_err(),
+            "missing target must fail"
+        );
     }
 }

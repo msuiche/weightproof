@@ -40,7 +40,10 @@ bin-clang/cp_verify examples/accepted-proof/config examples/accepted-proof/ivk \
 Facts pinned in `tests/fp_ground_truth.rs`: request = 66 u32 words (T=64,
 r=60, e=64, checked tokens 61..63 end-exclusive), y=199, proof head
 `CPPF H821 entry=0`, policy sec=128 salt=40 record=1 listed=0 answers=1,
-18 layout call lines.
+18 layout call lines. LINK layout: `spikes/plans/leaf-openings.txt` records
+all five opening lists, in draw order, from a `PART PASSED: leaf` oracle run;
+the Rust planner matches all 43 fields and the 546112-byte maximum, and the
+structural walker consumes the stored 536952-byte leaf exactly.
 
 Negative corpus for later increments: `examples/rejected-proofs/`
 (`altered_copies.tsv`, `every_kind_of_item.tsv`, `try_altered_copies.py`).

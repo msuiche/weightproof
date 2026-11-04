@@ -15,7 +15,9 @@ impl Version {
     /// Parse a 4-byte version word, refusing anything but `H821`.
     pub fn parse(bytes: &[u8]) -> Result<Self, FpError> {
         if bytes.len() != 4 {
-            return Err(FpError::BadLength { context: "version-word" });
+            return Err(FpError::BadLength {
+                context: "version-word",
+            });
         }
         let mut word = [0u8; 4];
         word.copy_from_slice(bytes);
