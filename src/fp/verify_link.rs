@@ -10,6 +10,7 @@ use crate::fp::{
     chain::{Chain, ChainKind},
     digest::Digest,
     error::FpError,
+    field::ExtensionElement,
     layout::{FileLayout, MessageKind},
     link_public::{IndexName, LinkPublic},
     merkle::verify_opening,
@@ -255,7 +256,9 @@ pub fn verify_link_transcript(
     let mut chain = Chain::new(public.first_query(&salt));
 
     chain.close(ChainKind::Algebraic, &[]);
-    let _gamma = chain.draw_e();
+    let _gamma: Vec<ExtensionElement> = (0..8)
+        .map(|_| ExtensionElement::from_words(chain.draw_e()))
+        .collect();
     let root = cursor.take_root("link")?;
     chain.close(ChainKind::Seed, &words(&root.to_le_bytes()));
     let _seed_z: Vec<[u64; 3]> = (0..20).map(|_| chain.draw_e()).collect();

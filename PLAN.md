@@ -62,7 +62,10 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
   pending. Tree roots, tree numbers, run-vs-configuration hash starts, and
   interleaved `(column, salt)` opening records are covered by oracle agreement
   tests and mutation tests.
-- Verification: 75 Rust tests pass; the `thumbv7em-none-eabi` no-std check
+- `fp::field` provides allocation-free Goldilocks and cubic-extension
+  arithmetic, checked against C++ differential vectors. LINK now consumes all
+  eight `gamma` challenges; full algebraic claim evaluation remains pending.
+- Verification: 77 Rust tests pass; the `thumbv7em-none-eabi` no-std check
   passes; all four fuzz targets completed 1,000 nightly runs without crashes.
 
 ## Decision register
