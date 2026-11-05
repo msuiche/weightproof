@@ -3,7 +3,7 @@
 use crate::fp::{
     claims::{
         bat_combine, foldeq_column_row, foldeq_record_row, foldeq_symbol, link_equality_row,
-        send_form, FoldedRow, GroupRow, OracleShape, Statement, VectorLay,
+        send_form, FoldedRow, GroupRow, OracleShape, VectorLay,
     },
     code_eval::log_ell,
     codes::CodeSize,
@@ -11,15 +11,14 @@ use crate::fp::{
     error::FpError,
     field::ExtensionElement as E,
     heads::{record_seeds, table_name},
+    iopp::Iopp,
     link_public::{unique_codes, IndexName},
     plan::{solve_entry_stages, EntryLayoutInput},
     proximity::{
-        base_linear_left, base_symbol, fold_output, fold_round_claim, last_rows,
-        single_rows_symbols, switch_rows, switch_target_stage, Opened, OpenedColumn, SingleRows,
-        SwitchTarget,
+        fold_output, fold_round_claim, switch_target_stage, Opened, OpenedColumn, SingleRows,
     },
     tensor::ceil_log2,
-    verify_link::OpeningData,
+    transcript::OpeningData,
 };
 use alloc::{vec, vec::Vec};
 
@@ -37,11 +36,7 @@ fn table_code() -> CodeSize {
 pub struct LinkAlgebra {
     input: EntryLayoutInput,
     configuration: Digest,
-    statement: Statement,
-    group: u32,
-    base_ids: Vec<u64>,
-    mask_ids: Vec<u64>,
-    last_target: Option<SwitchTarget>,
+    iopp: Iopp,
 }
 
 impl LinkAlgebra {
@@ -49,10 +44,12 @@ impl LinkAlgebra {
         let stages = solve_entry_stages(input).unwrap();
         let (base, base_ids) = unique_codes(&stages, false);
         let (mask, mask_ids) = unique_codes(&stages, true);
-        let mut statement = Statement::new(base, mask);
+        let mut iopp = Iopp::new(base, mask);
+        iopp.base_ids = base_ids;
+        iopp.mask_ids = mask_ids;
         let rows = input.folded_message_rows;
         for _ in 0..2 {
-            statement.sent(OracleShape {
+            iopp.statement.sent(OracleShape {
                 code: 0,
                 mask_code: 0,
                 main_rows: rows,
@@ -61,7 +58,7 @@ impl LinkAlgebra {
                 answers: input.setting.samples as u32,
             });
         }
-        statement.sent(OracleShape {
+        iopp.statement.sent(OracleShape {
             code: 0,
             mask_code: 0,
             main_rows: 0,
@@ -69,17 +66,13 @@ impl LinkAlgebra {
             main_deg: 3,
             answers: 0,
         });
-        let group = statement.new_group(0, 0);
-        statement.join(group, 0);
-        statement.join(group, 1);
+        iopp.group = iopp.statement.new_group(0, 0);
+        iopp.statement.join(iopp.group, 0);
+        iopp.statement.join(iopp.group, 1);
         Self {
             input: input.clone(),
             configuration: *configuration,
-            statement,
-            group,
-            base_ids,
-            mask_ids,
-            last_target: None,
+            iopp,
         }
     }
 
@@ -88,7 +81,7 @@ impl LinkAlgebra {
             oracle,
             lay: VectorLay {
                 row_bits: ceil_log2(self.input.folded_message_rows),
-                place_bits: log_ell(&self.statement.base[0]),
+                place_bits: log_ell(&self.iopp.statement.base[0]),
                 rows_high: true,
             },
         }
@@ -113,9 +106,9 @@ impl LinkAlgebra {
         let first_folded = self.folded_row(0);
         let further_folded = self.folded_row(1);
         for (oracle, answer) in [(0usize, answers[0]), (1usize, answers[1])] {
-            let mut sample = send_form(&self.statement, oracle as u32, z, beta, 0);
+            let mut sample = send_form(&self.iopp.statement, oracle as u32, z, beta, 0);
             sample.target = answer;
-            self.statement.oracles[oracle].sample_rows = vec![sample];
+            self.iopp.statement.oracles[oracle].sample_rows = vec![sample];
         }
 
         let code = table_code();
@@ -143,8 +136,8 @@ impl LinkAlgebra {
             &eq_gamma,
             &further_folded,
         );
-        self.statement.add_row(self.group, first_record);
-        self.statement.add_row(self.group, further_record);
+        self.iopp.statement.add_row(self.iopp.group, first_record);
+        self.iopp.statement.add_row(self.iopp.group, further_record);
 
         for (opening, at, draws) in [
             (&opened[0], &first_folded, positions_first),
@@ -153,23 +146,25 @@ impl LinkAlgebra {
             for &position in draws {
                 let column = opening.column_f(bytes, position, 0, 256);
                 let target = foldeq_symbol(&eq_gamma, &column);
-                self.statement
-                    .add_row(self.group, foldeq_column_row(&code, position, target, at));
+                self.iopp.statement.add_row(
+                    self.iopp.group,
+                    foldeq_column_row(&code, position, target, at),
+                );
             }
         }
-        self.statement.add_row(
-            self.group,
+        self.iopp.statement.add_row(
+            self.iopp.group,
             link_equality_row(&code, phi, &first_folded, &further_folded),
         );
-        let (layout, rows) = self.statement.begin_run(self.group);
-        Ok(bat_combine(&self.statement, &layout, &rows, batch))
+        let (layout, rows) = self.iopp.statement.begin_run(self.iopp.group);
+        Ok(bat_combine(&self.iopp.statement, &layout, &rows, batch))
     }
 
     fn opened_rows(&self, rows: &SingleRows, opening: &OpeningData, bytes: &[u8]) -> Opened {
         let mut out = Opened::default();
         for &position in &opening.positions {
             let mut columns = Vec::new();
-            match &self.last_target {
+            match &self.iopp.last_target {
                 None => {
                     let main = self.input.folded_message_rows as usize;
                     columns.push(OpenedColumn {
@@ -240,74 +235,50 @@ impl LinkAlgebra {
         bytes: &[u8],
     ) -> Result<GroupRow, FpError> {
         let stages = solve_entry_stages(&self.input)?;
-        let next = stages[stage + 1];
-        let mut claim = hiding + epsilon * row.target;
-        for (&(c0, c2), &challenge) in polynomials.iter().zip(challenges) {
-            claim = fold_round_claim(claim, c0, c2, challenge);
-        }
-        let layout = self.statement.layout(self.group);
         let folded = fold_output(
-            &self.statement,
-            self.base_ids[stage] as u32,
-            self.mask_ids[stage] as u32,
-            layout,
-            row,
-            self.statement.oracles.len() as u32 - 1,
+            &self.iopp.statement,
+            self.iopp.base_ids[stage] as u32,
+            self.iopp.mask_ids[stage] as u32,
+            self.iopp.statement.layout(self.iopp.group),
+            row.clone(),
+            self.iopp.statement.oracles.len() as u32 - 1,
             epsilon,
             challenges.to_vec(),
-            claim,
+            {
+                let mut claim = hiding + epsilon * row.target;
+                for (&(c0, c2), &challenge) in polynomials.iter().zip(challenges) {
+                    claim = fold_round_claim(claim, c0, c2, challenge);
+                }
+                claim
+            },
         );
         let opened = self.opened_rows(&folded, opening, bytes);
-        let symbols = single_rows_symbols(&folded, &opened, opening.positions.len());
-
         let target = switch_target_stage(
-            self.base_ids[stage + 1] as u32,
-            self.mask_ids[stage + 1] as u32,
-            next.g.k,
-            next.g.h,
+            self.iopp.base_ids[stage + 1] as u32,
+            self.iopp.mask_ids[stage + 1] as u32,
+            stages[stage + 1].g.k,
+            stages[stage + 1].g.h,
             self.input.setting.samples as u32,
         );
-        let oracle = self.statement.sent(target.shape.clone());
-        let to_last = stage + 2 == stages.len();
-        let _with = self.statement.sent(if to_last {
-            OracleShape {
-                code: target.shape.code,
-                mask_code: target.shape.mask_code,
-                main_rows: 1,
-                mask_rows: 1,
-                main_deg: 3,
-                answers: 0,
-            }
-        } else {
-            OracleShape {
-                code: 0,
-                mask_code: target.shape.mask_code,
-                main_rows: 0,
-                mask_rows: 1u64 << next.g.h,
-                main_deg: 3,
-                answers: 0,
-            }
-        });
-        self.group = self
-            .statement
-            .new_group(target.shape.code, target.shape.mask_code);
-        self.statement.join(self.group, oracle);
-        let mut sample = send_form(&self.statement, oracle, z, beta, 0);
-        sample.target = answer;
-        self.statement.oracles[oracle as usize].sample_rows = vec![sample];
-        for claim in switch_rows(
-            &self.statement,
-            &folded,
-            &target,
-            oracle,
+        self.iopp.fold_cs(
+            &stages,
+            self.input.setting.samples as u32,
+            stage,
+            row,
+            hiding,
+            epsilon,
+            polynomials,
+            challenges,
+            z,
+            beta,
+            answer,
             positions,
-            &symbols,
-        ) {
-            self.statement.add_row(self.group, claim);
-        }
-        let (layout, rows) = self.statement.begin_run(self.group);
-        self.last_target = Some(target);
-        Ok(bat_combine(&self.statement, &layout, &rows, theta))
+            theta,
+            &opened,
+            &[],
+            target,
+            true,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -322,43 +293,7 @@ impl LinkAlgebra {
         bytes: &[u8],
     ) -> Result<(), FpError> {
         let stages = solve_entry_stages(&self.input)?;
-        let last = stages.len() - 1;
-        let layout = self.statement.layout(self.group);
-        let rows = last_rows(
-            &self.statement,
-            self.base_ids[last] as u32,
-            self.mask_ids[last] as u32,
-            layout,
-            row,
-        );
-        let main_ell = self.statement.base[rows.code as usize].ell as usize;
-        let mask_ell = self.statement.mask[rows.mask_code as usize].ell as usize;
-        let main_r = self.statement.base[rows.code as usize].r as usize;
-        let mask_r = self.statement.mask[rows.mask_code as usize].r as usize;
-        let expected = main_ell + mask_ell + main_r + mask_r;
-        if clear.len() != expected {
-            return Err(FpError::BadLength {
-                context: "base-clear-values",
-            });
-        }
-        let messages = vec![
-            clear[..main_ell].to_vec(),
-            clear[main_ell..main_ell + mask_ell].to_vec(),
-        ];
-        let tails = vec![
-            clear[main_ell + mask_ell..main_ell + mask_ell + main_r].to_vec(),
-            clear[main_ell + mask_ell + main_r..].to_vec(),
-        ];
-        let flat: Vec<E> = messages.concat();
-        let left = base_linear_left(&self.statement, &rows, &flat);
-        let right = target_star + lambda * rows.target;
-        if left != right {
-            return Err(FpError::Range {
-                context: "base-linear-claim",
-            });
-        }
-
-        let target = self.last_target.clone().unwrap();
+        let target = self.iopp.last_target.clone().unwrap();
         let mut opened = Opened::default();
         for &position in &opening.positions {
             let main = target.shape.main_rows as usize;
@@ -380,30 +315,14 @@ impl LinkAlgebra {
                 opened.of[i].push(column);
             }
         }
-        let symbols = single_rows_symbols(&rows, &opened, opening.positions.len());
-        for (i, &position) in opening.positions.iter().enumerate() {
-            let star = &opened.of[1][i];
-            for row_index in 0..2 {
-                let masked = if row_index == 0 {
-                    star.main[0]
-                } else {
-                    star.mask[0]
-                } + lambda * symbols[i * 2 + row_index];
-                let actual = base_symbol(
-                    &self.statement,
-                    &rows,
-                    row_index,
-                    position,
-                    &messages,
-                    &tails,
-                );
-                if actual != masked {
-                    return Err(FpError::Range {
-                        context: "base-encoding",
-                    });
-                }
-            }
-        }
-        Ok(())
+        self.iopp.base(
+            &stages,
+            row,
+            target_star,
+            lambda,
+            clear,
+            &opened,
+            &opening.positions,
+        )
     }
 }

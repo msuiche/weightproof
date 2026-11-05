@@ -1,8 +1,9 @@
-//! Verifier-only FOLD/CS/BASE transitions for LINK, without kept rows.
+//! Verifier-only FOLD/CS/BASE transitions for LINK and reusable IOPPs.
 
 use crate::fp::{
     claims::{
-        pad_places, GroupLayout, GroupRow, OracleId, OracleShape, Part, Row, RowKind, Statement,
+        pad_places, GroupLayout, GroupRow, KeptForm, OracleId, OracleShape, Part, Row, RowKind,
+        Statement,
     },
     code_eval::{generator_at, generator_row, log_ell, mask_position, symbol_at},
     field::{ExtensionElement as E, FieldElement as F},
@@ -19,16 +20,18 @@ pub struct SingleRows {
     pub masks: u32,
     pub fresh: OracleId,
     pub c: Form,
+    pub kept: Vec<KeptForm>,
+    pub kept_rows: usize,
     pub d: Vec<Vec<E>>,
     pub target: E,
 }
 
 impl SingleRows {
     pub fn rows(&self) -> usize {
-        1 + self.masks as usize
+        1 + self.kept_rows + self.masks as usize
     }
     pub fn mask_row(&self, index: u32) -> usize {
-        1 + index as usize
+        1 + self.kept_rows + index as usize
     }
     pub fn oracles(&self) -> Vec<OracleId> {
         let mut out = self.layout.members.clone();
@@ -98,6 +101,20 @@ pub fn fold_output(
     let h = layout.h;
     let mut c = row.c;
     c.fix_low(&gamma, k, eps);
+    let kept_factor = gamma
+        .iter()
+        .fold(eps, |factor, &challenge| factor * (E::ONE - challenge));
+    let mut kept = row.kept;
+    for form in &mut kept {
+        form.c.scale(kept_factor);
+    }
+    let kept_rows = layout
+        .members
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| layout.kept[*i])
+        .map(|(_, &oracle)| statement.oracles[oracle as usize].shape.main_rows as usize)
+        .sum();
     let mask_ell = statement.mask[mask_code as usize].ell as usize;
     SingleRows {
         code,
@@ -107,6 +124,8 @@ pub fn fold_output(
         masks: 2,
         fresh,
         c,
+        kept,
+        kept_rows,
         d: vec![
             fold_mask_form(k, h, row.d, eps, &gamma),
             fold_mask_weights(k, h, mask_ell, &gamma),
@@ -133,6 +152,9 @@ pub fn single_rows_symbols(rows: &SingleRows, opened: &Opened, positions: usize)
         let mut mask = vec![E::ZERO; 1usize << layout.h];
         for (w, _) in layout.members.iter().enumerate() {
             let column = &opened.of[w][i];
+            if layout.kept[w] {
+                continue;
+            }
             for (b, &value) in column.main.iter().enumerate() {
                 main[layout.main_first[w] as usize + b] = value;
             }
@@ -141,6 +163,11 @@ pub fn single_rows_symbols(rows: &SingleRows, opened: &Opened, positions: usize)
             }
         }
         out.push(fold_low(main, &rows.gamma)[0]);
+        for (w, _) in layout.members.iter().enumerate() {
+            if layout.kept[w] {
+                out.extend_from_slice(&opened.of[w][i].main);
+            }
+        }
         if rows.masks >= 1 {
             out.push(fold_low(mask, &rows.gamma[..layout.h as usize])[0]);
         }
@@ -159,10 +186,17 @@ pub struct Cut {
     pub first_row: u64,
 }
 #[derive(Debug, Clone)]
+pub struct KeptTarget {
+    pub shape: OracleShape,
+    pub kept_again: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct SwitchTarget {
     pub shape: OracleShape,
     pub main: Cut,
     pub rest: Cut,
+    pub kept: Vec<KeptTarget>,
 }
 
 pub fn switch_target_stage(
@@ -191,6 +225,7 @@ pub fn switch_target_stage(
             bits: h,
             first_row: 0,
         },
+        kept: vec![],
     }
 }
 
@@ -202,8 +237,20 @@ fn cut_index(cut: Cut, table_row_bits: u32, index: u64) -> u64 {
 pub struct SwitchParts {
     pub mask_at: Vec<usize>,
     pub main_tail_at: usize,
+    pub kept_tail_at: Vec<usize>,
     pub mask_tail_at: Vec<usize>,
+    pub old_pad_at: Vec<usize>,
     pub length: usize,
+}
+
+pub fn switch_kept(rows: &SingleRows) -> Vec<OracleId> {
+    rows.layout
+        .members
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| rows.layout.kept[*i])
+        .map(|(_, &oracle)| oracle)
+        .collect()
 }
 
 pub fn switch_parts(statement: &Statement, rows: &SingleRows) -> SwitchParts {
@@ -214,9 +261,17 @@ pub fn switch_parts(statement: &Statement, rows: &SingleRows) -> SwitchParts {
     }
     out.main_tail_at = out.length;
     out.length += statement.base[rows.code as usize].r as usize;
+    for _ in 0..rows.kept_rows {
+        out.kept_tail_at.push(out.length);
+        out.length += statement.base[rows.code as usize].r as usize;
+    }
     for _ in 0..rows.masks {
         out.mask_tail_at.push(out.length);
         out.length += statement.mask[rows.mask_code as usize].r as usize;
+    }
+    for oracle in switch_kept(rows) {
+        out.old_pad_at.push(out.length);
+        out.length += pad_places(statement, oracle).len();
     }
     out
 }
@@ -342,6 +397,47 @@ fn switch_lift(mut form: Form, vars: u32, cut: Cut, table_row_bits: u32, table_b
     form
 }
 
+fn switch_form_on(oracle: OracleId, row: &Row) -> Form {
+    let mut out = Form::default();
+    for term in &row.terms {
+        assert_eq!((term.oracle, term.part), (oracle, Part::Main));
+        out.add(term.tensor.clone());
+    }
+    for unit in &row.units {
+        assert_eq!((unit.oracle, unit.part), (oracle, Part::Main));
+        out.add_entry(unit.index, unit.coefficient);
+    }
+    for run in &row.runs {
+        assert_eq!((run.oracle, run.part), (oracle, Part::Main));
+        for (j, &coefficient) in run.coefficients.iter().enumerate() {
+            out.add_entry(run.first + run.step * j as u64, coefficient);
+        }
+    }
+    for form in &row.forms {
+        assert_eq!(form.oracle, oracle);
+        out.add_scaled(&form.form, E::ONE);
+    }
+    out
+}
+
+fn switch_add_kept(
+    row: &mut Row,
+    pads: &[(Part, u64, u32, E)],
+    anew: OracleId,
+    group: OracleId,
+    rest_part: Part,
+    places: &SwitchPlaces,
+    old_pad_at: usize,
+    form: &Form,
+) {
+    row.add_form(anew, form.clone());
+    for (i, &(_, index, _, _)) in pads.iter().enumerate() {
+        let there = form.at(index);
+        row.add_unit(anew, Part::Main, index, -there);
+        row.add_unit(group, rest_part, places.get(old_pad_at + i), there);
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SwitchBox {
     pub is: bool,
@@ -387,6 +483,7 @@ pub fn switch_rows(
     rows: &SingleRows,
     target: &SwitchTarget,
     oracle: OracleId,
+    anew: &[OracleId],
     positions: &[u64],
     symbols: &[E],
 ) -> Vec<Row> {
@@ -405,6 +502,18 @@ pub fn switch_rows(
         }
     }
     let main_tail = switch_pieces(&places, parts.main_tail_at, code.r as usize);
+    let kept = switch_kept(rows);
+    assert_eq!(kept.len(), target.kept.len());
+    assert_eq!(kept.len(), anew.len());
+    let pads: Vec<Vec<(Part, u64, u32, E)>> = kept
+        .iter()
+        .map(|&oracle| pad_places(statement, oracle))
+        .collect();
+    let kept_tail: Vec<Vec<SwitchPiece>> = parts
+        .kept_tail_at
+        .iter()
+        .map(|&at| switch_pieces(&places, at, code.r as usize))
+        .collect();
     let mut mask_message = Vec::new();
     let mut mask_tail = Vec::new();
     for j in 0..rows.masks as usize {
@@ -439,6 +548,23 @@ pub fn switch_rows(
     }
     old.target = rows.target;
     out.push(old);
+    for (i, &old_oracle) in kept.iter().enumerate() {
+        for sample in &statement.oracles[old_oracle as usize].sample_rows {
+            let mut old = Row::default();
+            switch_add_kept(
+                &mut old,
+                &pads[i],
+                anew[i],
+                oracle,
+                target.rest.part,
+                &places,
+                parts.old_pad_at[i],
+                &switch_form_on(old_oracle, sample),
+            );
+            old.target = sample.target;
+            out.push(old);
+        }
+    }
 
     let sorted: Vec<u64> = {
         let mut values = positions.to_vec();
@@ -461,13 +587,46 @@ pub fn switch_rows(
             ..Row::default()
         };
         let mut form = Form::default();
-        form.add(on_message);
+        form.add(on_message.clone());
         main.add_form(
             oracle,
             switch_lift(form, log_ell(code), target.main, row_bits, table_bits),
         );
         switch_add_rest_base(&mut main, oracle, target.rest.part, &main_tail, &tail);
         out.push(main);
+
+        let mut kept_row = 0usize;
+        for (i, &old_oracle) in kept.iter().enumerate() {
+            for b in 0..statement.oracles[old_oracle as usize].shape.main_rows {
+                let mut row = Row {
+                    kind: RowKind::Generator,
+                    target: at_symbols[1 + kept_row],
+                    ..Row::default()
+                };
+                let mut form = Form::default();
+                form.add(on_message.clone());
+                form.insert_choice(0, statement.row_bits(old_oracle, Part::Main), b);
+                switch_add_kept(
+                    &mut row,
+                    &pads[i],
+                    anew[i],
+                    oracle,
+                    target.rest.part,
+                    &places,
+                    parts.old_pad_at[i],
+                    &form,
+                );
+                switch_add_rest_base(
+                    &mut row,
+                    oracle,
+                    target.rest.part,
+                    &kept_tail[kept_row],
+                    &tail,
+                );
+                out.push(row);
+                kept_row += 1;
+            }
+        }
 
         for j in 0..rows.masks as usize {
             let position_zk = mask_position(code, zk, position);
@@ -509,7 +668,7 @@ pub fn switch_rows(
 }
 
 pub fn last_rows(
-    _statement: &Statement,
+    statement: &Statement,
     code: u32,
     mask_code: u32,
     mut layout: GroupLayout,
@@ -517,6 +676,13 @@ pub fn last_rows(
 ) -> SingleRows {
     row.c.fix_low(&[E::ZERO], 1, E::ONE);
     layout.k = 0;
+    let kept_rows = layout
+        .members
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| layout.kept[*i])
+        .map(|(_, &oracle)| statement.oracles[oracle as usize].shape.main_rows as usize)
+        .sum();
     SingleRows {
         code,
         mask_code,
@@ -525,6 +691,8 @@ pub fn last_rows(
         masks: 1,
         fresh: u32::MAX,
         c: row.c,
+        kept: row.kept,
+        kept_rows,
         d: vec![row.d],
         target: row.target,
     }
@@ -535,9 +703,19 @@ pub fn base_linear_left(statement: &Statement, rows: &SingleRows, message: &[E])
     let mut coefficients = vec![E::ZERO; code.ell as usize];
     rows.c.add_to(&mut coefficients);
     let mut left = inner(&coefficients, &message[..code.ell as usize]);
+    let mut offset = code.ell as usize;
+    for kept in &rows.kept {
+        let shape = &statement.oracles[kept.oracle as usize].shape;
+        let width = statement.base[shape.code as usize].ell as usize;
+        let count = shape.main_rows as usize * width;
+        let mut coefficients = vec![E::ZERO; count];
+        kept.c.add_to(&mut coefficients);
+        left += inner(&coefficients, &message[offset..offset + count]);
+        offset += count;
+    }
     for j in 0..rows.masks as usize {
         let width = statement.mask[rows.mask_code as usize].ell as usize;
-        let start = code.ell as usize + j * width;
+        let start = offset + j * width;
         left += inner(&rows.d[j], &message[start..start + width]);
     }
     left
@@ -553,10 +731,13 @@ pub fn base_symbol(
 ) -> E {
     let code = if row == 0 {
         &statement.base[rows.code as usize]
+    } else if row <= rows.kept_rows {
+        let kept = &rows.kept[row - 1];
+        &statement.base[statement.oracles[kept.oracle as usize].shape.code as usize]
     } else {
         &statement.mask[rows.mask_code as usize]
     };
-    let position = if row == 0 {
+    let position = if row <= rows.kept_rows {
         position
     } else {
         mask_position(&statement.base[rows.code as usize], code, position)
@@ -592,6 +773,7 @@ mod tests {
             mask_code: 0,
             layout: GroupLayout {
                 members: vec![],
+                kept: vec![],
                 main_first: vec![],
                 mask_first: vec![],
                 k: 0,
@@ -603,6 +785,8 @@ mod tests {
             masks: 1,
             fresh: 0,
             c: form,
+            kept: vec![],
+            kept_rows: 0,
             d: vec![vec![E([100, 0, 0]), E([200, 0, 0])]],
             target: E::ZERO,
         };

@@ -1,4 +1,4 @@
-//! LINK linear claims and BAT, restricted to groups without kept members.
+//! LINK linear claims and BAT, including kept members.
 
 use crate::fp::{
     code_eval::{generator_at, log_ell, log_r},
@@ -142,12 +142,14 @@ pub struct Group {
     pub code: u32,
     pub mask_code: u32,
     pub members: Vec<OracleId>,
+    pub kept: Vec<bool>,
     pub rows: Vec<Row>,
 }
 
 #[derive(Debug, Clone)]
 pub struct GroupLayout {
     pub members: Vec<OracleId>,
+    pub kept: Vec<bool>,
     pub main_first: Vec<u64>,
     pub mask_first: Vec<u64>,
     pub k: u32,
@@ -157,8 +159,15 @@ pub struct GroupLayout {
 }
 
 #[derive(Debug, Clone)]
+pub struct KeptForm {
+    pub oracle: OracleId,
+    pub c: Form,
+}
+
+#[derive(Debug, Clone)]
 pub struct GroupRow {
     pub c: Form,
+    pub kept: Vec<KeptForm>,
     pub d: Vec<E>,
     pub target: E,
 }
@@ -199,9 +208,14 @@ impl Statement {
     }
 
     pub fn join(&mut self, group: GroupId, oracle: OracleId) {
-        let members = &mut self.groups[group as usize].members;
-        let at = members.partition_point(|&id| id < oracle);
-        members.insert(at, oracle);
+        self.join_kept(group, oracle, false);
+    }
+
+    pub fn join_kept(&mut self, group: GroupId, oracle: OracleId, kept: bool) {
+        let group = &mut self.groups[group as usize];
+        let at = group.members.partition_point(|&id| id < oracle);
+        group.members.insert(at, oracle);
+        group.kept.insert(at, kept);
     }
 
     pub fn add_row(&mut self, group: GroupId, row: Row) {
@@ -229,9 +243,12 @@ impl Statement {
         let mut main_order: Vec<usize> = (0..group.members.len()).collect();
         main_order
             .sort_by_key(|&i| core::cmp::Reverse(self.row_bits(group.members[i], Part::Main)));
-        let mut main_first = vec![0; group.members.len()];
+        let mut main_first = vec![u64::MAX; group.members.len()];
         let mut main_used = 0u64;
         for i in main_order {
+            if group.kept[i] {
+                continue;
+            }
             let oracle = group.members[i];
             main_first[i] = main_used;
             main_used += 1u64 << self.row_bits(oracle, Part::Main);
@@ -251,6 +268,7 @@ impl Statement {
         let h = ceil_log2(mask_used);
         GroupLayout {
             members: group.members.clone(),
+            kept: group.kept.clone(),
             main_first,
             mask_first,
             k: ceil_log2(main_used).max(h).max(1),
@@ -291,6 +309,23 @@ fn group_index(index: u64, row_bits: u32, first: u64, group_bits: u32) -> u64 {
     (first + row) + (place << group_bits)
 }
 
+fn kept_form<'a>(out: &'a mut GroupRow, oracle: OracleId) -> &'a mut Form {
+    let at = match out.kept.binary_search_by_key(&oracle, |form| form.oracle) {
+        Ok(at) => at,
+        Err(at) => {
+            out.kept.insert(
+                at,
+                KeptForm {
+                    oracle,
+                    c: Form::default(),
+                },
+            );
+            at
+        }
+    };
+    &mut out.kept[at].c
+}
+
 fn add_to_group_row(
     statement: &Statement,
     layout: &GroupLayout,
@@ -306,6 +341,10 @@ fn add_to_group_row(
     let carry_entry =
         |out: &mut GroupRow, oracle: OracleId, part: Part, index: u64, coefficient: E| {
             let i = member(oracle);
+            if part == Part::Main && layout.kept[i] {
+                kept_form(out, oracle).add_entry(index, coefficient * scale);
+                return;
+            }
             let a = statement.row_bits(oracle, part);
             let (first, bits) = match part {
                 Part::Main => (layout.main_first[i], layout.k),
@@ -326,6 +365,10 @@ fn add_to_group_row(
         };
         let mut tensor = term.tensor.clone();
         tensor.scalar *= scale;
+        if term.part == Part::Main && layout.kept[i] {
+            kept_form(out, term.oracle).add(tensor);
+            continue;
+        }
         tensor.insert_choice(a, bits - a, first >> a);
         match term.part {
             Part::Main => out.c.add(tensor),
@@ -348,6 +391,10 @@ fn add_to_group_row(
     }
     for main in &row.forms {
         let i = member(main.oracle);
+        if layout.kept[i] {
+            kept_form(out, main.oracle).add_scaled(&main.form, scale);
+            continue;
+        }
         let a = statement.row_bits(main.oracle, Part::Main);
         let mut form = main.form.clone();
         form.insert_choice(a, layout.k - a, layout.main_first[i] >> a);
@@ -364,6 +411,7 @@ pub fn bat_combine(
 ) -> GroupRow {
     let mut out = GroupRow {
         c: Form::default(),
+        kept: vec![],
         d: vec![],
         target: E::ZERO,
     };
@@ -655,5 +703,43 @@ mod tests {
         let batched = bat_combine(&statement, &layout, &rows, challenge);
         assert_eq!(batched.target, first.target);
         assert_eq!(batched.c.at(0), first.terms[0].tensor.at(0));
+    }
+
+    #[test]
+    fn bat_keeps_claims_on_their_original_table() {
+        let mut statement = Statement::new(vec![code(4, 4, 0)], vec![code(3, 2, 0)]);
+        let kept = statement.sent(OracleShape {
+            code: 0,
+            mask_code: 0,
+            main_rows: 1,
+            mask_rows: 0,
+            main_deg: 3,
+            answers: 0,
+        });
+        let folded = statement.sent(OracleShape {
+            code: 0,
+            mask_code: 0,
+            main_rows: 1,
+            mask_rows: 0,
+            main_deg: 3,
+            answers: 0,
+        });
+        let group = statement.new_group(0, 0);
+        statement.join_kept(group, kept, true);
+        statement.join(group, folded);
+        let z = vec![E([2, 3, 5]), E([7, 11, 13])];
+        let mut row = Row::default();
+        row.add(kept, Part::Main, Tensor::eq(&z, E::ONE));
+        row.add(folded, Part::Main, Tensor::eq(&z, E::ONE));
+        row.add_unit(kept, Part::Main, 3, E([17, 19, 23]));
+        statement.add_row(group, row.clone());
+        let (layout, rows) = statement.begin_run(group);
+        let batched = bat_combine(&statement, &layout, &rows, E::ONE);
+        assert!(layout.kept[0]);
+        assert_eq!(layout.main_first[0], u64::MAX);
+        let mut expected = row.terms[1].tensor.clone();
+        expected.insert_choice(0, 1, 0);
+        assert_eq!(batched.c.at(2), expected.at(2));
+        assert_eq!(batched.kept[0].c.at(3), z[0] * z[1] + E([17, 19, 23]));
     }
 }
