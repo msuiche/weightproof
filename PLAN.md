@@ -52,6 +52,19 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
 - worldfnd/whir: Rust WHIR implementation (academic prototype, NOT production
   reviewed). Candidate core primitive, gated by security + benchmark evaluation.
 
+## Current D11 increment (2026-11-05)
+
+- `fp::verify_link` executes the stored LINK transcript, checks canonical field
+  encodings and proof-of-work, derives positions from the chain, and verifies
+  all five Merkle openings against the C++ oracle's accepted leaf.
+- The increment is transcript/Merkle evidence, not a full proof verdict:
+  LINK's algebraic claims and the key/request transcript verifiers are still
+  pending. Tree roots, tree numbers, run-vs-configuration hash starts, and
+  interleaved `(column, salt)` opening records are covered by oracle agreement
+  tests and mutation tests.
+- Verification: 75 Rust tests pass; the `thumbv7em-none-eabi` no-std check
+  passes; all four fuzz targets completed 1,000 nightly runs without crashes.
+
 ## Decision register
 
 | # | Decision |

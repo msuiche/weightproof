@@ -185,7 +185,7 @@ fn stored_leaf_is_consumed_exactly_with_oracle_positions() {
         table_tree: TreeSize::new("table", 23, 2048),
         columns_first: 51,
         columns_further: 51,
-        folded_message_rows: 54,
+        folded_message_rows: 18,
         first_group: GroupSize {
             k: 6,
             h: 0,

@@ -3,7 +3,7 @@
 //! These functions compute layout only. Soundness analysis lives in
 //! `fp::analysis`; no byte plan is itself a proof-verification result.
 
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{borrow::ToOwned, string::String, vec, vec::Vec};
 
 use crate::fp::{
     analysis::{
@@ -50,6 +50,9 @@ pub struct TreeSize {
     pub log_n: u32,
     pub leaf_bytes: u64,
     pub one_list: bool,
+    pub number: u32,
+    pub stored: bool,
+    pub root_context: Option<String>,
 }
 
 impl TreeSize {
@@ -59,7 +62,16 @@ impl TreeSize {
             log_n,
             leaf_bytes,
             one_list: false,
+            number: 0,
+            stored: false,
+            root_context: None,
         }
+    }
+
+    pub fn stored(mut self, root_context: impl Into<String>) -> Self {
+        self.stored = true;
+        self.root_context = Some(root_context.into());
+        self
     }
 }
 
@@ -98,12 +110,22 @@ pub fn path_digests_expected(log_n: u32, t: u64) -> f64 {
     digests
 }
 
-/// Append symbols, salts and pruned paths for one tree opening.
 pub fn plan_open(
     messages: &mut Vec<PlanMessage>,
     context: &str,
     tree: &TreeSize,
     t: u64,
+) -> Result<(), FpError> {
+    plan_open_with_root(messages, context, tree, t, None)
+}
+
+/// Append an opening, optionally binding it to a different table root.
+pub fn plan_open_with_root(
+    messages: &mut Vec<PlanMessage>,
+    context: &str,
+    tree: &TreeSize,
+    t: u64,
+    root_context: Option<&str>,
 ) -> Result<(), FpError> {
     let where_tree = alloc::format!("{context}, {}", tree.name);
     let distinct = expected_distinct(tree.log_n, t);
@@ -122,6 +144,12 @@ pub fn plan_open(
         log_n: tree.log_n,
         leaf_bytes: tree.leaf_bytes,
         draws: t,
+        root_context: root_context
+            .map(str::to_owned)
+            .or_else(|| tree.root_context.clone())
+            .unwrap_or_else(|| context.into()),
+        tree_number: tree.number,
+        stored: tree.stored,
     };
     messages.push(
         PlanMessage::position_dependent(
@@ -131,7 +159,7 @@ pub fn plan_open(
             symbols,
             distinct * tree.leaf_bytes as f64,
         )
-        .with_opening(opening),
+        .with_opening(opening.clone()),
     );
     messages.push(
         PlanMessage::position_dependent(
@@ -141,7 +169,7 @@ pub fn plan_open(
             salts,
             distinct * SALT_BYTES as f64,
         )
-        .with_opening(opening),
+        .with_opening(opening.clone()),
     );
     messages.push(
         PlanMessage::position_dependent(
@@ -151,7 +179,7 @@ pub fn plan_open(
             paths,
             path_digests_expected(tree.log_n, t) * DIGEST_BYTES as f64,
         )
-        .with_opening(opening),
+        .with_opening(opening.clone()),
     );
     Ok(())
 }
@@ -217,6 +245,11 @@ pub fn plan_iopp(
         messages.push(n); // BAT before the first fold
     }
     let mut trees = first_trees.to_vec();
+    let mut next_tree_number = trees
+        .iter()
+        .map(|tree| tree.number.saturating_add(1))
+        .max()
+        .unwrap_or(0);
     for i in 0..stages.len() - 1 {
         let stage = &stages[i];
         let next = &stages[i + 1];
@@ -251,6 +284,8 @@ pub fn plan_iopp(
                 })?,
             );
             mask.one_list = true;
+            mask.number = next_tree_number;
+            next_tree_number = next_tree_number.saturating_add(1);
             trees.push(mask);
         }
         let symbols = g.slots + if g.has_mask() { 2 } else { 0 };
@@ -293,6 +328,9 @@ pub fn plan_iopp(
             })?;
         let mut switch = TreeSize::new("switch oracle", n.main.log_n, leaf);
         switch.one_list = masks_ride;
+        switch.number = next_tree_number;
+        next_tree_number = next_tree_number.saturating_add(1);
+        switch.root_context = Some(context.clone());
         trees = vec![switch];
     }
     let last = stages.last().unwrap();
@@ -301,6 +339,7 @@ pub fn plan_iopp(
     if !masks_ride {
         let mut mask = TreeSize::new("masking codeword", g.main.log_n, 2 * E_BYTES);
         mask.one_list = true;
+        mask.number = next_tree_number;
         trees.push(mask);
         messages.push(root(&context));
     }
@@ -356,13 +395,8 @@ pub struct EntryLayoutInput {
     pub masks_ride: bool,
 }
 
-/// Plan a complete leaf file (`file_entry` + `link_plan`).
-pub fn plan_entry(input: &EntryLayoutInput) -> Result<FilePlan, FpError> {
-    if input.columns_first == 0 || input.columns_further == 0 {
-        return Err(FpError::Range {
-            context: "link-no-columns",
-        });
-    }
+/// Solve the first LINK group and all proximity stages from public sizes.
+pub fn solve_entry_stages(input: &EntryLayoutInput) -> Result<Vec<Stage>, FpError> {
     let setting = &input.setting;
     let scope = Scope::Commit;
     let rows = 2u64
@@ -380,7 +414,20 @@ pub fn plan_entry(input: &EntryLayoutInput) -> Result<FilePlan, FpError> {
         batched_rows: rows,
     };
     let (first, first_t) = solve_group(setting, scope, &input.first_group, &load)?;
-    let stages = solve_stages(setting, scope, &first, first_t, &input.stage_choices)?;
+    solve_stages(setting, scope, &first, first_t, &input.stage_choices)
+}
+
+/// Plan a complete leaf file (`file_entry` + `link_plan`).
+pub fn plan_entry(input: &EntryLayoutInput) -> Result<FilePlan, FpError> {
+    if input.columns_first == 0 || input.columns_further == 0 {
+        return Err(FpError::Range {
+            context: "link-no-columns",
+        });
+    }
+    let setting = &input.setting;
+    let scope = Scope::Commit;
+    let stages = solve_entry_stages(input)?;
+    let first = &stages[0].g;
 
     let mut messages = vec![PlanMessage::fixed(
         "chain salt",
@@ -396,11 +443,12 @@ pub fn plan_entry(input: &EntryLayoutInput) -> Result<FilePlan, FpError> {
     if let Some(nonce) = nonce("link", setting.query_work(scope)) {
         messages.push(nonce);
     }
-    plan_open(
+    plan_open_with_root(
         &mut messages,
         "link, first table",
         &input.table_tree,
         input.columns_first,
+        Some("first table"),
     )?;
     plan_open(
         &mut messages,
@@ -414,16 +462,17 @@ pub fn plan_entry(input: &EntryLayoutInput) -> Result<FilePlan, FpError> {
     })?;
     let folded = input
         .folded_message_rows
-        .checked_mul(2 * F_BYTES)
+        .checked_mul(2 * E_BYTES)
         .and_then(|x| x.checked_add(mask_rows * 3 * F_BYTES))
         .ok_or(FpError::Range {
             context: "link-first-tree-leaf",
         })?;
-    let first_tree = TreeSize::new(
+    let mut first_tree = TreeSize::new(
         "tree of the first table's folded row; the further table's folded row; fold mask",
         first.main.log_n,
         folded,
     );
+    first_tree.root_context = Some("link".into());
     plan_iopp(
         &mut messages,
         setting,
@@ -440,55 +489,55 @@ pub fn plan_entry(input: &EntryLayoutInput) -> Result<FilePlan, FpError> {
     )
 }
 
+#[cfg(any(test, feature = "std"))]
+pub fn accepted_example_entry_input() -> EntryLayoutInput {
+    EntryLayoutInput {
+        setting: Setting::example(),
+        table_answers: 256,
+        table_tree: TreeSize::new("table", 23, 2048).stored("further table"),
+        columns_first: 51,
+        columns_further: 51,
+        folded_message_rows: 18,
+        first_group: crate::fp::analysis::GroupSize {
+            k: 6,
+            h: 0,
+            slots: 1,
+            main: crate::fp::codes::CodeSize {
+                log_n: 17,
+                ell: 32768,
+                r: 0,
+                over_E: true,
+            },
+            mask: crate::fp::codes::CodeSize {
+                log_n: 13,
+                ell: 64,
+                r: 0,
+                over_E: true,
+            },
+            m: 0,
+        },
+        stage_choices: vec![
+            StageChoice {
+                k: 4,
+                h: 2,
+                log_n: 14,
+                mask_log_n: 12,
+            },
+            StageChoice {
+                k: 0,
+                h: 0,
+                log_n: 14,
+                mask_log_n: 14,
+            },
+        ],
+        masks_ahead: true,
+        masks_ride: true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fp::{analysis::GroupSize, codes::CodeSize};
-
-    fn example_input() -> EntryLayoutInput {
-        EntryLayoutInput {
-            setting: Setting::example(),
-            table_answers: 256,
-            table_tree: TreeSize::new("table", 23, 2048),
-            columns_first: 51,
-            columns_further: 51,
-            folded_message_rows: 54,
-            first_group: GroupSize {
-                k: 6,
-                h: 0,
-                slots: 1,
-                main: CodeSize {
-                    log_n: 17,
-                    ell: 32768,
-                    r: 0,
-                    over_E: true,
-                },
-                mask: CodeSize {
-                    log_n: 13,
-                    ell: 64,
-                    r: 0,
-                    over_E: true,
-                },
-                m: 0,
-            },
-            stage_choices: vec![
-                StageChoice {
-                    k: 4,
-                    h: 2,
-                    log_n: 14,
-                    mask_log_n: 12,
-                },
-                StageChoice {
-                    k: 0,
-                    h: 0,
-                    log_n: 14,
-                    mask_log_n: 14,
-                },
-            ],
-            masks_ahead: true,
-            masks_ride: true,
-        }
-    }
 
     #[test]
     fn merkle_path_bounds_match_oracle_openings() {
@@ -500,7 +549,7 @@ mod tests {
 
     #[test]
     fn complete_entry_layout_matches_all_oracle_offsets_and_lengths() {
-        let plan = plan_entry(&example_input()).unwrap();
+        let plan = plan_entry(&accepted_example_entry_input()).unwrap();
         let layout = plan.layout().unwrap();
         assert_eq!(layout.fields().len(), 43);
         assert_eq!(layout.maximum_bytes(), 546112);
@@ -564,7 +613,7 @@ mod tests {
 
     #[test]
     fn entry_layout_rejects_more_than_maximum_but_allows_pruned_openings() {
-        let plan = plan_entry(&example_input()).unwrap();
+        let plan = plan_entry(&accepted_example_entry_input()).unwrap();
         let layout = plan.layout().unwrap();
         layout.validate_len(546112).unwrap();
         layout.validate_len(400000).unwrap();

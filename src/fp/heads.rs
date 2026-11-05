@@ -102,6 +102,23 @@ pub fn parse_key_record(
     bytes: &[u8],
     expected_answers: usize,
 ) -> Result<(Digest, Vec<[u64; 3]>, &[u8]), FpError> {
+    parse_table_record(bytes, b"CPIK", "CPIK", expected_answers)
+}
+
+/// The leaf file's table root and stored record answers.
+pub fn parse_leaf_record(
+    bytes: &[u8],
+    expected_answers: usize,
+) -> Result<(Digest, Vec<[u64; 3]>, &[u8]), FpError> {
+    parse_table_record(bytes, b"CPEN", "CPEN", expected_answers)
+}
+
+fn parse_table_record<'a>(
+    bytes: &'a [u8],
+    tag: &[u8; 4],
+    tag_name: &'static str,
+    expected_answers: usize,
+) -> Result<(Digest, Vec<[u64; 3]>, &'a [u8]), FpError> {
     if bytes.len() < 40 {
         return Err(FpError::Truncated {
             context: "key-head",
@@ -109,8 +126,8 @@ pub fn parse_key_record(
             available: bytes.len(),
         });
     }
-    if &bytes[0..4] != b"CPIK" {
-        return Err(FpError::BadTag { expected: "CPIK" });
+    if &bytes[0..4] != tag {
+        return Err(FpError::BadTag { expected: tag_name });
     }
     Version::parse(&bytes[4..8])?;
     let root = Digest::from_le_bytes(bytes[8..40].try_into().map_err(|_| FpError::Truncated {

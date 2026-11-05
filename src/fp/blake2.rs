@@ -13,6 +13,7 @@ pub type Start = [u32; 8];
 pub const CHAIN_START: u64 = 160;
 pub const CHAIN_QUERY: u64 = 162;
 pub const PARAMETERS: u64 = 169;
+pub const RUN: u64 = 172;
 pub const PUBLISHED_ID: u64 = 179;
 
 const IV: [u64; 8] = [

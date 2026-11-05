@@ -20,7 +20,11 @@ pub struct OpeningActual<'a> {
     pub positions: &'a [u64],
 }
 
-/// One field at its actual (not maximum) offset in a file.
+/// One logical field at its actual (not maximum) offset in plan order.
+/// For an opening, columns and salts are counted separately here but are
+/// interleaved as `(column, salt)` records in the file; `offset`/`bytes` are
+/// for length accounting, not independent random-access slices of those two
+/// fields. Paths follow the interleaved records.
 #[derive(Debug, Clone, Copy)]
 pub struct ActualField<'a> {
     pub offset: u64,
@@ -100,14 +104,14 @@ pub fn walk_file<'a>(
                         context: "opening-order",
                     });
                 }
-                let opening = message.opening.ok_or(FpError::Range {
+                let opening = message.opening.as_ref().ok_or(FpError::Range {
                     context: "opening-shape-missing",
                 })?;
                 active_sizes = actual_opening(opening.log_n, supplied.positions, opening.draws)?;
                 active_context = Some(supplied.context);
                 next_opening += 1;
             }
-            let opening = message.opening.ok_or(FpError::Range {
+            let opening = message.opening.as_ref().ok_or(FpError::Range {
                 context: "opening-shape-missing",
             })?;
             match message.kind {
@@ -174,7 +178,11 @@ pub fn walk_file<'a>(
 }
 
 /// Return distinct leaves and pruned sibling-digest count for actual positions.
-fn actual_opening(log_n: u32, positions: &[u64], draws: u64) -> Result<(u64, u64), FpError> {
+pub(crate) fn actual_opening(
+    log_n: u32,
+    positions: &[u64],
+    draws: u64,
+) -> Result<(u64, u64), FpError> {
     if log_n >= 64 || positions.len() as u64 != draws {
         return Err(FpError::Range {
             context: "opening-draw-count",

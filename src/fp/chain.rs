@@ -47,6 +47,7 @@ pub struct Chain {
     kind: u64,
     message: Vec<u64>,
     call_index: u64,
+    nonce: u64,
     next: usize,
     words: [u64; 8],
 }
@@ -74,6 +75,7 @@ impl Chain {
             kind: 0,
             message: Vec::new(),
             call_index: 1,
+            nonce: 0,
             next: 8,
             words: [0; 8],
         }
@@ -96,13 +98,25 @@ impl Chain {
             h.push_u64(*w);
         }
         h.push_u64(self.kind | (j << 16));
-        h.push_u64(0);
+        h.push_u64(self.nonce);
         h.finish_words()
     }
 
-    /// Close a round without proof of work: the query is made, rho becomes the
-    /// answer's first block, and the draw stream opens at its second block.
+    /// Close a round without proof of work.
     pub fn close(&mut self, kind: ChainKind, message: &[u64]) {
+        let accepted = self.close_with_work(kind, message, 0, 0);
+        debug_assert!(accepted);
+    }
+
+    /// Close a round with proof of work. Returns false without changing the
+    /// chain if the answer's first word has fewer than `work_bits` zero bits.
+    pub fn close_with_work(
+        &mut self,
+        kind: ChainKind,
+        message: &[u64],
+        work_bits: u32,
+        nonce: u64,
+    ) -> bool {
         let first = {
             let mut h = Hasher::new(
                 CHAIN_QUERY | (self.label << 16),
@@ -113,23 +127,33 @@ impl Chain {
             for w in message {
                 h.push_u64(*w);
             }
-            h.push_u64(kind as u64);
-            h.push_u64(0);
+            h.push_u64(kind as u64 | ((work_bits as u64) << 8));
+            h.push_u64(nonce);
             h.finish_words()
         };
+        if first[0].trailing_zeros() < work_bits {
+            return false;
+        }
         self.query_start = self.rho;
         self.query_round = self.round;
         let mut first32 = [0u8; 32];
-        for (i, w) in first[..4].iter().enumerate() {
+        let rho_words = if work_bits == 0 {
+            &first[..4]
+        } else {
+            &first[4..]
+        };
+        for (i, w) in rho_words.iter().enumerate() {
             first32[i * 8..i * 8 + 8].copy_from_slice(&w.to_le_bytes());
         }
         self.rho = Digest::from_le_bytes(&first32);
-        self.kind = kind as u64;
+        self.kind = kind as u64 | ((work_bits as u64) << 8);
         self.message = message.to_vec();
         self.round += 1;
         self.call_index = 1;
+        self.nonce = nonce;
         self.words = first;
-        self.next = 4;
+        self.next = if work_bits == 0 { 4 } else { 8 };
+        true
     }
 
     /// The next word of the verifier's message: call 0's second half, then

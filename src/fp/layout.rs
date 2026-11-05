@@ -30,11 +30,14 @@ impl MessageKind {
 }
 
 /// Tree and draw information needed to compute an opening's actual size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpeningSize {
     pub log_n: u32,
     pub leaf_bytes: u64,
     pub draws: u64,
+    pub root_context: String,
+    pub tree_number: u32,
+    pub stored: bool,
 }
 
 /// One run of bytes in a chain plan. `count` represents compact repeated

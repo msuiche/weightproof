@@ -9,9 +9,11 @@
 //! Scope of the current increments: request/parameter/version/field parsing;
 //! configuration and commitment IDs; group/stage derivation; key/leaf/proof
 //! byte-layout composition; complete LINK/leaf, key, and request-proof planning;
-//! and exact structural walking from drawn positions. This is NOT yet a cryptographic verifier:
-//! transcript execution, field validation and proof verification land against
-//! the same ground truth. No layout or parse result claims a proof is valid.
+//! exact structural walking from drawn positions; and LINK transcript execution
+//! with canonical field checks, proof-of-work, and Merkle opening verification.
+//! This is NOT yet a full cryptographic verifier: LINK's algebraic claims and
+//! the key/request transcript checks remain. No layout or parse result claims
+//! a proof is valid.
 
 pub mod algebra;
 pub mod analysis;
@@ -24,12 +26,15 @@ pub mod field;
 pub mod heads;
 pub mod key;
 pub mod layout;
+pub mod link_public;
+pub mod merkle;
 pub mod plan;
 pub mod policy;
 pub mod proof;
 pub mod proof_plan;
 pub mod request;
 pub mod subproof;
+pub mod verify_link;
 pub mod version;
 pub mod walk;
 
