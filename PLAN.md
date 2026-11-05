@@ -55,17 +55,18 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
 ## Current D11 increment (2026-11-05)
 
 - `fp::verify_link` executes the stored LINK transcript, checks canonical field
-  encodings and proof-of-work, derives positions from the chain, and verifies
-  all five Merkle openings against the C++ oracle's accepted leaf.
-- The increment is transcript/Merkle evidence, not a full proof verdict:
-  LINK's algebraic claims and the key/request transcript verifiers are still
-  pending. Tree roots, tree numbers, run-vs-configuration hash starts, and
-  interleaved `(column, salt)` opening records are covered by oracle agreement
-  tests and mutation tests.
+  encodings and proof-of-work, derives positions from the chain, verifies all
+  five Merkle openings, and checks LINK's algebraic claims through BAT, FOLD,
+  CS, and BASE against the C++ oracle's accepted leaf.
+- Key/request transcript verifiers remain pending. Tree roots, tree numbers,
+  run-vs-configuration hash starts, interleaved `(column, salt)` opening
+  records, sample answers, round polynomials, and masked messages are covered
+  by oracle agreement tests and targeted mutation tests.
 - `fp::field` provides allocation-free Goldilocks and cubic-extension
-  arithmetic, checked against C++ differential vectors. LINK now consumes all
-  eight `gamma` challenges; full algebraic claim evaluation remains pending.
-- Verification: 77 Rust tests pass; the `thumbv7em-none-eabi` no-std check
+  arithmetic, checked against C++ differential vectors. `fp::tensor`,
+  `fp::claims`, `fp::code_eval`, `fp::proximity`, and `fp::link_algebra`
+  implement the verifier-only claim and proximity algebra.
+- Verification: 89 Rust tests pass; the `thumbv7em-none-eabi` no-std check
   passes; all four fuzz targets completed 1,000 nightly runs without crashes.
 
 ## Decision register

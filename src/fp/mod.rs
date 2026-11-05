@@ -10,15 +10,16 @@
 //! configuration and commitment IDs; group/stage derivation; key/leaf/proof
 //! byte-layout composition; complete LINK/leaf, key, and request-proof planning;
 //! exact structural walking from drawn positions; and LINK transcript execution
-//! with canonical field checks, proof-of-work, and Merkle opening verification.
-//! This is NOT yet a full cryptographic verifier: LINK's algebraic claims and
-//! the key/request transcript checks remain. No layout or parse result claims
-//! a proof is valid.
+//! with canonical field checks, proof-of-work, Merkle opening verification, and
+//! algebraic claims. Key/request transcript checks remain. No layout or parse
+//! result alone claims a proof is valid.
 
 pub mod algebra;
 pub mod analysis;
 pub mod blake2;
 pub mod chain;
+pub mod claims;
+pub mod code_eval;
 pub mod codes;
 pub mod digest;
 pub mod error;
@@ -26,14 +27,17 @@ pub mod field;
 pub mod heads;
 pub mod key;
 pub mod layout;
+pub mod link_algebra;
 pub mod link_public;
 pub mod merkle;
 pub mod plan;
 pub mod policy;
 pub mod proof;
 pub mod proof_plan;
+pub mod proximity;
 pub mod request;
 pub mod subproof;
+pub mod tensor;
 pub mod verify_link;
 pub mod version;
 pub mod walk;

@@ -1,22 +1,69 @@
 //! Executable LINK transcript and Merkle verification.
 //!
 //! This checks public-input encoding, every round message, proof-of-work,
-//! positions and Merkle openings. It does not yet evaluate LINK's algebraic
-//! claims, so a successful result is not a full proof-verification verdict.
+//! positions, Merkle openings, and LINK's algebraic claims.
 
 use alloc::{borrow::ToOwned, collections::BTreeMap, string::String, vec, vec::Vec};
+use core::ops::Range;
 
 use crate::fp::{
     chain::{Chain, ChainKind},
     digest::Digest,
     error::FpError,
-    field::ExtensionElement,
+    field::{ExtensionElement, FieldElement},
     layout::{FileLayout, MessageKind},
+    link_algebra::LinkAlgebra,
     link_public::{IndexName, LinkPublic},
     merkle::verify_opening,
     plan::EntryLayoutInput,
     walk::{actual_opening, walk_file, OpeningActual},
 };
+
+/// One verified opening's sorted positions and interleaved record range.
+#[derive(Debug, Clone)]
+pub struct OpeningData {
+    pub positions: Vec<u64>,
+    pub records: Range<usize>,
+    pub leaf_bytes: usize,
+}
+
+impl OpeningData {
+    fn record<'a>(&self, bytes: &'a [u8], position: u64) -> &'a [u8] {
+        let index = self.positions.binary_search(&position).unwrap();
+        let stride = self.leaf_bytes + 40;
+        let start = self.records.start + index * stride;
+        &bytes[start..start + self.leaf_bytes]
+    }
+
+    pub fn column_f(
+        &self,
+        bytes: &[u8],
+        position: u64,
+        start: usize,
+        count: usize,
+    ) -> Vec<FieldElement> {
+        let column = self.record(bytes, position);
+        column[start * 8..(start + count) * 8]
+            .chunks_exact(8)
+            .map(|word| FieldElement(u64::from_le_bytes(word.try_into().unwrap())))
+            .collect()
+    }
+
+    pub fn column_e(
+        &self,
+        bytes: &[u8],
+        position: u64,
+        start: usize,
+        count: usize,
+    ) -> Vec<ExtensionElement> {
+        self.column_f(bytes, position, start, count * 3)
+            .chunks_exact(3)
+            .map(|coordinates| {
+                ExtensionElement::from_words([coordinates[0].0, coordinates[1].0, coordinates[2].0])
+            })
+            .collect()
+    }
+}
 
 struct Cursor<'a> {
     bytes: &'a [u8],
@@ -26,6 +73,7 @@ struct Cursor<'a> {
     offset: usize,
     roots: BTreeMap<String, Digest>,
     openings: Vec<(String, Vec<u64>)>,
+    opened: Vec<OpeningData>,
 }
 
 impl<'a> Cursor<'a> {
@@ -45,6 +93,7 @@ impl<'a> Cursor<'a> {
             offset: 0,
             roots,
             openings: vec![],
+            opened: vec![],
         }
     }
 
@@ -202,6 +251,14 @@ impl<'a> Cursor<'a> {
         )?;
         self.offset = end;
         self.index += 3;
+        let mut sorted = positions.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        self.opened.push(OpeningData {
+            positions: sorted,
+            records: opening_start..path_start,
+            leaf_bytes: first.leaf_bytes as usize,
+        });
         self.openings.push((context, positions.to_vec()));
         Ok(())
     }
@@ -221,7 +278,26 @@ fn words(bytes: &[u8]) -> Vec<u64> {
         .collect()
 }
 
-/// Result of transcript and Merkle checks, not of LINK's algebraic claims.
+fn elements(bytes: &[u8]) -> Vec<ExtensionElement> {
+    bytes
+        .chunks_exact(24)
+        .map(|element| {
+            let mut coordinates = [0u64; 3];
+            for (i, word) in element.chunks_exact(8).enumerate() {
+                coordinates[i] = u64::from_le_bytes(word.try_into().unwrap());
+            }
+            ExtensionElement::from_words(coordinates)
+        })
+        .collect()
+}
+
+fn one_element(bytes: &[u8]) -> ExtensionElement {
+    let values = elements(bytes);
+    assert_eq!(values.len(), 1);
+    values[0]
+}
+
+/// Result of transcript, Merkle, and algebraic LINK verification.
 #[derive(Debug, Clone)]
 pub struct LinkTranscriptEvidence {
     pub fields: usize,
@@ -254,16 +330,20 @@ pub fn verify_link_transcript(
     );
     let run = public.first_query(&salt).run.unwrap();
     let mut chain = Chain::new(public.first_query(&salt));
+    let mut algebra = LinkAlgebra::new(input, configuration);
 
     chain.close(ChainKind::Algebraic, &[]);
-    let _gamma: Vec<ExtensionElement> = (0..8)
+    let gamma: Vec<ExtensionElement> = (0..8)
         .map(|_| ExtensionElement::from_words(chain.draw_e()))
         .collect();
     let root = cursor.take_root("link")?;
     chain.close(ChainKind::Seed, &words(&root.to_le_bytes()));
-    let _seed_z: Vec<[u64; 3]> = (0..20).map(|_| chain.draw_e()).collect();
-    let _beta = chain.draw_e_nonzero();
+    let seed_z: Vec<ExtensionElement> = (0..20)
+        .map(|_| ExtensionElement::from_words(chain.draw_e()))
+        .collect();
+    let beta = ExtensionElement::from_words(chain.draw_e_nonzero());
     let answers = cursor.take("sample answers", "link")?;
+    let sample_answers = elements(answers);
     chain.close(ChainKind::Empty, &words(answers));
     let nonce = cursor.take_nonce("link")?;
     if !chain.close_with_work(ChainKind::Positions, &[], 32, nonce) {
@@ -275,11 +355,27 @@ pub fn verify_link_transcript(
         .map(|_| chain.draw_position(input.table_tree.log_n))
         .collect();
     chain.close(ChainKind::Algebraic, &[]);
-    let _phi: Vec<[u64; 3]> = (0..19).map(|_| chain.draw_e()).collect();
+    let phi: Vec<ExtensionElement> = (0..19)
+        .map(|_| ExtensionElement::from_words(chain.draw_e()))
+        .collect();
     chain.close(ChainKind::Algebraic, &[]);
-    let _batch = chain.draw_e();
+    let batch = ExtensionElement::from_words(chain.draw_e());
     cursor.open_next(&positions[..input.columns_first as usize], &run)?;
     cursor.open_next(&positions[input.columns_first as usize..], &run)?;
+    let mut row = algebra.initial(
+        first,
+        further,
+        &gamma,
+        &seed_z,
+        beta,
+        &sample_answers,
+        &phi,
+        batch,
+        &cursor.opened,
+        &positions[..input.columns_first as usize],
+        &positions[input.columns_first as usize..],
+        bytes,
+    )?;
 
     let stages = crate::fp::plan::solve_entry_stages(input)?;
     for (index, stage) in stages.iter().enumerate() {
@@ -290,19 +386,27 @@ pub fn verify_link_transcript(
         };
         if index + 1 < stages.len() {
             let hiding = cursor.take("hiding sum", &context)?;
+            let hiding_sum = one_element(hiding);
             chain.close(ChainKind::Epsilon, &words(hiding));
-            let _epsilon = chain.draw_e();
+            let epsilon = ExtensionElement::from_words(chain.draw_e());
+            let mut polynomials = Vec::with_capacity(stage.g.k as usize);
+            let mut challenges = Vec::with_capacity(stage.g.k as usize);
             for _ in 1..=stage.g.k {
                 let polynomial = cursor.take("round polynomial", &context)?;
+                let coefficients = elements(polynomial);
+                polynomials.push((coefficients[0], coefficients[1]));
                 chain.close(ChainKind::Algebraic, &words(polynomial));
-                let _round = chain.draw_e();
+                challenges.push(ExtensionElement::from_words(chain.draw_e()));
             }
             let root = cursor.take_root(&context)?;
             chain.close(ChainKind::Seed, &words(&root.to_le_bytes()));
             let cube = crate::fp::analysis::stage_cube_bits(&stages[index + 1].g) as usize;
-            let _z: Vec<[u64; 3]> = (0..=cube).map(|_| chain.draw_e()).collect();
-            let _beta = chain.draw_e_nonzero();
+            let z: Vec<ExtensionElement> = (0..cube)
+                .map(|_| ExtensionElement::from_words(chain.draw_e()))
+                .collect();
+            let beta = ExtensionElement::from_words(chain.draw_e_nonzero());
             let answers = cursor.take("sample answers", &context)?;
+            let answer = one_element(answers);
             let nonce = cursor.take_nonce(&context)?;
             if !chain.close_with_work(ChainKind::Positions, &words(answers), 32, nonce) {
                 return Err(FpError::Range {
@@ -312,13 +416,30 @@ pub fn verify_link_transcript(
             let positions: Vec<u64> = (0..stage.t)
                 .map(|_| chain.draw_position(stage.g.main.log_n))
                 .collect();
-            let _batch = chain.draw_e();
+            let theta = ExtensionElement::from_words(chain.draw_e());
             cursor.open_stage(&positions, &run)?;
+            row = algebra.fold_cs(
+                index,
+                row,
+                hiding_sum,
+                epsilon,
+                &polynomials,
+                &challenges,
+                &z,
+                beta,
+                answer,
+                &positions,
+                theta,
+                &cursor.opened[index + 2],
+                bytes,
+            )?;
         } else {
             let target = cursor.take("masked target", &context)?;
+            let target_star = one_element(target);
             chain.close(ChainKind::Algebraic, &words(target));
-            let _lambda = chain.draw_e();
+            let lambda = ExtensionElement::from_words(chain.draw_e());
             let clear = cursor.take("masked message and randomness", &context)?;
+            let clear_values = elements(clear);
             let nonce = cursor.take_nonce(&context)?;
             if !chain.close_with_work(ChainKind::Positions, &words(clear), 32, nonce) {
                 return Err(FpError::Range {
@@ -329,6 +450,16 @@ pub fn verify_link_transcript(
                 .map(|_| chain.draw_position(stage.g.main.log_n))
                 .collect();
             cursor.open_stage(&positions, &run)?;
+            algebra.base(
+                row,
+                target_star,
+                lambda,
+                &clear_values,
+                &positions,
+                &cursor.opened[index + 2],
+                bytes,
+            )?;
+            break;
         }
     }
     if cursor.index != layout.fields().len() {
@@ -374,6 +505,62 @@ mod tests {
             IndexName::new(&further_root, &configuration, further_record),
             leaf.to_vec(),
         )
+    }
+
+    fn mutate_named(leaf: &mut [u8], name: &str, occurrence: usize) {
+        let input = accepted_example_entry_input();
+        let plan = crate::fp::plan::plan_entry(&input).unwrap();
+        let layout = plan.layout().unwrap();
+        let field = layout
+            .fields()
+            .iter()
+            .filter(|field| field.message.name == name)
+            .nth(occurrence)
+            .unwrap();
+        assert!(!field.message.position_dependent);
+        leaf[field.offset as usize] ^= 1;
+    }
+
+    #[test]
+    fn sample_answer_mutation_is_rejected() {
+        let (configuration, first, further, mut leaf) = stored();
+        mutate_named(&mut leaf, "sample answers", 0);
+        assert!(verify_link_transcript(
+            &accepted_example_entry_input(),
+            &configuration,
+            &first,
+            &further,
+            &leaf
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn round_polynomial_mutation_is_rejected() {
+        let (configuration, first, further, mut leaf) = stored();
+        mutate_named(&mut leaf, "round polynomial", 0);
+        assert!(verify_link_transcript(
+            &accepted_example_entry_input(),
+            &configuration,
+            &first,
+            &further,
+            &leaf
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn masked_message_mutation_is_rejected() {
+        let (configuration, first, further, mut leaf) = stored();
+        mutate_named(&mut leaf, "masked message and randomness", 0);
+        assert!(verify_link_transcript(
+            &accepted_example_entry_input(),
+            &configuration,
+            &first,
+            &further,
+            &leaf
+        )
+        .is_err());
     }
 
     #[test]

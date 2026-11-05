@@ -252,7 +252,7 @@ fn write_plan(out: &mut Vec<u8>, input: &EntryLayoutInput, stages: &[Stage]) {
     }
 }
 
-fn unique_codes(stages: &[Stage], mask: bool) -> (Vec<CodeSize>, Vec<u64>) {
+pub(crate) fn unique_codes(stages: &[Stage], mask: bool) -> (Vec<CodeSize>, Vec<u64>) {
     let mut unique = Vec::new();
     let mut ids = Vec::with_capacity(stages.len());
     for stage in stages {
