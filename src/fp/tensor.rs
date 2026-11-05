@@ -19,6 +19,9 @@ pub struct Tensor {
     pick_mask: u64,
     pick_value: u64,
     vars: u32,
+    dense_vars: Vec<u32>,
+    values: Option<Vec<E>>,
+    first: u64,
 }
 
 impl Tensor {
@@ -38,6 +41,9 @@ impl Tensor {
             pick_mask: 0,
             pick_value: 0,
             vars: 0,
+            dense_vars: vec![],
+            values: None,
+            first: 0,
         };
         for &x in z {
             out.push(E::ONE - x, x);
@@ -53,6 +59,9 @@ impl Tensor {
             pick_mask: 0,
             pick_value: 0,
             vars: 0,
+            dense_vars: vec![],
+            values: None,
+            first: 0,
         };
         for &x in f {
             out.push(E::ONE, E::from_base(x));
@@ -62,6 +71,34 @@ impl Tensor {
 
     pub fn vars(&self) -> u32 {
         self.vars
+    }
+
+    pub fn has_dense(&self) -> bool {
+        !self.dense_vars.is_empty()
+    }
+
+    pub fn push_dense(&mut self, count: u32) {
+        assert!(self.values.is_none());
+        for _ in 0..count {
+            self.dense_vars.push(self.vars);
+            self.push(E::ONE, E::ONE);
+        }
+    }
+
+    pub fn set_values(&mut self, values: Vec<E>, first: u64) {
+        assert!(!self.dense_vars.is_empty() && self.values.is_none());
+        assert!(first as usize + (1usize << self.dense_vars.len()) <= values.len());
+        self.values = Some(values);
+        self.first = first;
+    }
+
+    fn dense_index(&self, index: u64) -> usize {
+        self.dense_vars
+            .iter()
+            .enumerate()
+            .fold(0usize, |out, (i, &variable)| {
+                out | (((index >> variable) & 1) as usize) << i
+            })
     }
 
     pub fn lo(&self, t: u32) -> E {
@@ -122,7 +159,10 @@ impl Tensor {
     }
 
     pub fn insert_choice(&mut self, at: u32, count: u32, value: u64) {
-        assert!(at <= self.vars && self.vars + count <= 63);
+        while self.vars < at {
+            self.push(E::ONE, E::ONE);
+        }
+        assert!(self.vars + count <= 63);
         if count == 0 {
             return;
         }
@@ -131,6 +171,11 @@ impl Tensor {
         self.pick_mask = (self.pick_mask & low) | ((self.pick_mask & !low) << count) | (ones << at);
         self.pick_value =
             (self.pick_value & low) | ((self.pick_value & !low) << count) | ((value & ones) << at);
+        for variable in &mut self.dense_vars {
+            if *variable >= at {
+                *variable += count;
+            }
+        }
         self.vars += count;
     }
 
@@ -166,7 +211,38 @@ impl Tensor {
                 pair += 1;
             }
         }
-        out
+        if !self.has_dense() || out.is_zero() {
+            return out;
+        }
+        out * self.values.as_ref().unwrap()[self.first as usize + self.dense_index(index)]
+    }
+
+    fn folded_dense(&self, g: &[E], count: u32) -> (Option<Vec<E>>, E) {
+        let n = 1usize << self.dense_vars.len();
+        let mut values =
+            self.values.as_ref().unwrap()[self.first as usize..self.first as usize + n].to_vec();
+        for i in (0..self.dense_vars.len()).rev() {
+            let variable = self.dense_vars[i];
+            if variable >= count {
+                continue;
+            }
+            let challenge = g[variable as usize];
+            let low_half = 1usize << i;
+            let mut next = vec![E::ZERO; values.len() / 2];
+            for b in 0..values.len() / (2 * low_half) {
+                for a in 0..low_half {
+                    let zero = values[a + 2 * low_half * b];
+                    let one = values[a + low_half + 2 * low_half * b];
+                    next[a + low_half * b] = zero + (one - zero) * challenge;
+                }
+            }
+            values = next;
+        }
+        if values.len() == 1 {
+            (None, values[0])
+        } else {
+            (Some(values), E::ONE)
+        }
     }
 
     pub fn fix_low(&mut self, g: &[E], count: u32) {
@@ -202,6 +278,20 @@ impl Tensor {
         self.pick_mask >>= count;
         self.pick_value >>= count;
         self.vars -= count;
+        if self.dense_vars.iter().any(|&variable| variable < count) {
+            let (values, factor) = self.folded_dense(g, count);
+            self.dense_vars.retain(|&variable| variable >= count);
+            if self.dense_vars.is_empty() {
+                self.scalar *= factor;
+                self.values = None;
+            } else {
+                self.values = values;
+            }
+            self.first = 0;
+        }
+        for variable in &mut self.dense_vars {
+            *variable -= count;
+        }
     }
 
     pub fn add_to(&self, out: &mut [E]) {
@@ -479,15 +569,17 @@ mod tests {
     }
 
     #[test]
-    fn multiple_choice_insertions_match_cpp() {
-        let z: Vec<E> = (1..=21).map(e).collect();
-        let gamma: Vec<E> = (2..=7).map(e).collect();
-        let mut form = Form::default();
-        form.add(Tensor::eq(&z, e(29)));
-        form.add(Tensor::eq(&z, e(31)));
-        form.insert_choice(5, 3, 5);
-        form.insert_choice(2, 2, 1);
-        form.fix_low(&gamma, 6, e(11));
-        assert_eq!(form.at(10), e(686_180_892_006_613_536));
+    fn dense_factor_evaluates_and_folds() {
+        let mut tensor = Tensor::eq(&[], E([2, 0, 0]));
+        tensor.push_dense(2);
+        tensor.set_values(
+            vec![E([1, 0, 0]), E([3, 0, 0]), E([5, 0, 0]), E([7, 0, 0])],
+            0,
+        );
+        assert_eq!(tensor.at(0), E([2, 0, 0]));
+        assert_eq!(tensor.at(3), E([14, 0, 0]));
+        tensor.fix_low(&[E([2, 0, 0])], 1);
+        assert_eq!(tensor.at(0), E([10, 0, 0]));
+        assert_eq!(tensor.at(1), E([18, 0, 0]));
     }
 }

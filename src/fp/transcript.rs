@@ -76,8 +76,18 @@ impl<'a> Cursor<'a> {
         configuration: &Digest,
         anchor_root: &Digest,
     ) -> Self {
+        Self::new_with_anchor(bytes, layout, configuration, "first table", anchor_root)
+    }
+
+    pub(crate) fn new_with_anchor(
+        bytes: &'a [u8],
+        layout: &'a FileLayout<'a>,
+        configuration: &Digest,
+        anchor: &str,
+        anchor_root: &Digest,
+    ) -> Self {
         let mut roots = BTreeMap::new();
-        roots.insert("first table".into(), *anchor_root);
+        roots.insert(anchor.into(), *anchor_root);
         Self {
             bytes,
             layout,

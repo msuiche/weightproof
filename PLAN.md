@@ -58,15 +58,17 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
   encodings and proof-of-work, derives positions from the chain, verifies all
   five Merkle openings, and checks LINK's algebraic claims through BAT, FOLD,
   CS, and BASE against the C++ oracle's accepted leaf.
-- Key/request transcript verifiers remain pending. Tree roots, tree numbers,
-  run-vs-configuration hash starts, interleaved `(column, salt)` opening
-  records, sample answers, round polynomials, and masked messages are covered
-  by oracle agreement tests and targeted mutation tests.
+- `fp::verify_key` executes the accepted key's one-time WF/ranges transcript
+  through BATT, FOLD, CS, and BASE, including extension-field opening strides,
+  all-main-then-mask leaf layout, and base-star columns. The key's LIN
+  member-first, seal/binding, shared-chain, and second-chain segments remain
+  pending; request-proof verification also remains pending.
 - `fp::field` provides allocation-free Goldilocks and cubic-extension
   arithmetic, checked against C++ differential vectors. `fp::tensor`,
   `fp::claims`, `fp::code_eval`, `fp::proximity`, and `fp::link_algebra`
   implement the verifier-only claim and proximity algebra.
-- Verification: 89 Rust tests pass; the `thumbv7em-none-eabi` no-std check
+- Verification: 97 Rust tests pass, including accepted-key acceptance and three
+  transcript-corruption rejections; the `thumbv7em-none-eabi` no-std check
   passes; all four fuzz targets completed 1,000 nightly runs without crashes.
 
 ## Decision register

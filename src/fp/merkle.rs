@@ -50,7 +50,8 @@ pub fn hash_leaf(
         h.push(&[0]);
     }
     h.push(salt);
-    Ok(h.finish())
+    let digest = h.finish();
+    Ok(digest)
 }
 
 /// Hash two children under TREE_NODE with the configuration start.
@@ -231,5 +232,46 @@ mod tests {
             parent.to_hex(),
             "07082bcb4478b8789992f4cf6712a3522d5327e335608b9914d75169225e70a8"
         );
+    }
+
+    #[test]
+    fn first_fold_leaf_matches_oracle() {
+        let policy =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
+        let layout =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
+        let kl = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/KL.bin");
+        let configuration = crate::fp::heads::configuration_digest(&[policy, layout, kl]);
+        let key = include_bytes!("../../spikes/flashprove/examples/accepted-proof/ivk/key.bin");
+        let (root, record, _) = crate::fp::heads::parse_key_record(key, 256).unwrap();
+        let fixed = crate::fp::key_fixture::accepted_fixed(configuration);
+        let name = crate::fp::link_public::IndexName::new(&root, &configuration, record);
+        let public = crate::fp::key_public::KeyPublic::new(
+            &fixed,
+            &name,
+            include_bytes!("../../spikes/plans/key-one-time-plan.bin"),
+        );
+        let salt = crate::fp::digest::Digest::from_le_bytes(key[6184..6216].try_into().unwrap());
+        let run = public
+            .first_query(&salt, crate::fp::key_public::LABEL_ONE_TIME_CHAIN)
+            .run
+            .unwrap();
+        let tree = OpeningSize {
+            log_n: 22,
+            leaf_bytes: 368,
+            draws: 158,
+            root_context: "ranges: multiplicities".into(),
+            tree_number: 1,
+            stored: false,
+        };
+        let digest = hash_leaf(
+            &tree,
+            &run,
+            35898,
+            &key[164696..165064],
+            &key[165064..165104],
+        )
+        .unwrap();
+        assert_eq!(digest.0[0], 0x3f2235ba);
     }
 }

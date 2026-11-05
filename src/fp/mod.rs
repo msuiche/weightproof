@@ -16,6 +16,7 @@
 
 pub mod algebra;
 pub mod analysis;
+pub mod batt;
 pub mod blake2;
 pub mod chain;
 pub mod claims;
@@ -30,21 +31,27 @@ pub mod key;
 pub mod key_fixture;
 pub mod key_public;
 pub mod layout;
+pub mod lin;
 pub mod link_algebra;
 pub mod link_public;
+pub mod lkp;
+pub mod mask;
 pub mod merkle;
 pub mod plan;
 pub mod policy;
 pub mod proof;
 pub mod proof_plan;
 pub mod proximity;
+pub mod psc;
 pub mod request;
 pub mod subproof;
 pub mod tensor;
 pub mod transcript;
+pub mod verify_key;
 pub mod verify_link;
 pub mod version;
 pub mod walk;
+pub mod wf;
 
 pub use error::FpError;
 pub use field::{FieldElement, GOLDILOCKS_P};

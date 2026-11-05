@@ -68,6 +68,16 @@ impl TreeSize {
         }
     }
 
+    pub fn numbered(mut self, number: u32) -> Self {
+        self.number = number;
+        self
+    }
+
+    pub fn rooted(mut self, context: impl Into<String>) -> Self {
+        self.root_context = Some(context.into());
+        self
+    }
+
     pub fn stored(mut self, root_context: impl Into<String>) -> Self {
         self.stored = true;
         self.root_context = Some(root_context.into());

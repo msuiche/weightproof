@@ -75,6 +75,15 @@ pub struct LinShape {
     pub choice: IoppChoice,
 }
 
+impl LinShape {
+    pub fn k_col(&self) -> u32 {
+        self.k_lo + self.fold.index.v
+    }
+    pub fn k_row(&self) -> u32 {
+        crate::fp::tensor::ceil_log2(self.matrix_rows)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct WfRun {
     pub first_place: u64,

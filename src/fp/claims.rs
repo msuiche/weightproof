@@ -6,6 +6,7 @@ use crate::fp::{
     field::{ExtensionElement as E, FieldElement as F},
     heads::SampleSeed,
     link_public::IndexName,
+    mask::{free_mask_entries, MaskLedger},
     tensor::{ceil_log2, tensor_below, Form, Tensor},
 };
 use alloc::{vec, vec::Vec};
@@ -136,6 +137,7 @@ impl Row {
 pub struct Oracle {
     pub shape: OracleShape,
     pub sample_rows: Vec<Row>,
+    pub ledger: Option<MaskLedger>,
 }
 #[derive(Debug, Clone, Default)]
 pub struct Group {
@@ -194,6 +196,7 @@ impl Statement {
         self.oracles.push(Oracle {
             shape,
             sample_rows: vec![],
+            ledger: None,
         });
         self.oracles.len() as OracleId - 1
     }
@@ -216,6 +219,26 @@ impl Statement {
         let at = group.members.partition_point(|&id| id < oracle);
         group.members.insert(at, oracle);
         group.kept.insert(at, kept);
+    }
+
+    pub fn admit_sample(&mut self, oracle: OracleId) {
+        let shape = &self.oracles[oracle as usize].shape;
+        let count = free_mask_entries(
+            shape.mask_rows,
+            self.mask[shape.mask_code as usize].ell,
+            shape.answers as u64,
+        );
+        self.oracles[oracle as usize].ledger = Some(MaskLedger::new(
+            oracle,
+            0,
+            count,
+            shape.mask_rows.max(1),
+            crate::fp::tensor::ceil_log2(shape.mask_rows),
+        ));
+    }
+
+    pub fn masks(&mut self, oracle: OracleId) -> &mut MaskLedger {
+        self.oracles[oracle as usize].ledger.as_mut().unwrap()
     }
 
     pub fn add_row(&mut self, group: GroupId, row: Row) {
@@ -299,6 +322,11 @@ impl Statement {
                 .filter(|row| row.kind == RowKind::Generator)
                 .cloned(),
         );
+        for &oracle in &group.members {
+            if let Some(ledger) = &mut self.oracles[oracle as usize].ledger {
+                ledger.close();
+            }
+        }
         (layout, rows)
     }
 }

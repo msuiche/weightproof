@@ -152,11 +152,10 @@ pub fn single_rows_symbols(rows: &SingleRows, opened: &Opened, positions: usize)
         let mut mask = vec![E::ZERO; 1usize << layout.h];
         for (w, _) in layout.members.iter().enumerate() {
             let column = &opened.of[w][i];
-            if layout.kept[w] {
-                continue;
-            }
             for (b, &value) in column.main.iter().enumerate() {
-                main[layout.main_first[w] as usize + b] = value;
+                if !layout.kept[w] {
+                    main[layout.main_first[w] as usize + b] = value;
+                }
             }
             for (b, &value) in column.mask.iter().enumerate() {
                 mask[layout.mask_first[w] as usize + b] = value;

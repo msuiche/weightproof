@@ -12,6 +12,24 @@ use crate::fp::{
 };
 use alloc::{vec, vec::Vec};
 
+pub fn execution_stage(
+    codes: &crate::fp::key_public::Codes,
+    stage: &crate::fp::key_public::IoppStage,
+) -> crate::fp::analysis::Stage {
+    crate::fp::analysis::Stage {
+        g: crate::fp::analysis::GroupSize {
+            k: stage.k,
+            h: stage.h,
+            slots: 1,
+            main: codes.base[stage.code as usize],
+            mask: codes.mask[stage.mask_code as usize],
+            m: 0,
+        },
+        t: 0,
+        r_ood: 0,
+    }
+}
+
 #[derive(Debug)]
 pub struct Iopp {
     pub statement: Statement,
@@ -33,6 +51,12 @@ impl Iopp {
             mask_ids: vec![],
             last_target: None,
         }
+    }
+
+    pub fn with_statement(statement: Statement) -> Self {
+        let mut out = Self::new(vec![], vec![]);
+        out.statement = statement;
+        out
     }
 
     #[allow(clippy::too_many_arguments)]

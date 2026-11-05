@@ -317,18 +317,27 @@ mod tests {
                 folded_stages,
                 omega_stages,
                 own_stages,
-                folded_trees: vec![tree("tree of the folded row; fold mask", 17, 456)],
+                folded_trees: vec![tree("tree of the folded row; fold mask", 17, 456)
+                    .numbered(2)
+                    .rooted("table, folded row")],
                 omega_trees: vec![
-                    tree("tree of Omega", 18, 96),
+                    tree("tree of Omega", 18, 96)
+                        .numbered(3)
+                        .rooted("table, Omega"),
                     tree(
                         "tree of the mask of the split between Omega and the folded row",
                         13,
                         24,
-                    ),
+                    )
+                    .numbered(4)
+                    .rooted("table, Omega"),
                 ],
-                w_trees: vec![tree("tree of W; fold mask", 18, 48)],
-                input_trees: vec![tree("tree of a request's masks", 13, 24)],
-                table_tree: tree("table", 23, 2048),
+                w_trees: vec![tree("tree of W; fold mask", 18, 48)
+                    .numbered(5)
+                    .rooted("table, W")],
+                input_trees: vec![tree("tree of a request's masks", 13, 24)
+                    .rooted("masks of the committer's rows on the table")],
+                table_tree: tree("table", 23, 2048).stored("table"),
                 columns: 51,
                 split: true,
                 one_time: true,
@@ -346,7 +355,9 @@ mod tests {
                     "tree of multiplicities of the ranges' look-ups; fold mask",
                     22,
                     368,
-                )],
+                )
+                .numbered(1)
+                .rooted("ranges: multiplicities")],
                 lookups: vec![
                     WfLookup {
                         name: "ranges: bytes".into(),
@@ -472,3 +483,6 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+pub(crate) use tests::accepted_input;
