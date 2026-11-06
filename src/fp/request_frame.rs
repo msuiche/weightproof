@@ -828,5 +828,57 @@ mod tests {
             .unwrap()
             .0;
         assert_eq!(frame.cursor.index, close_g1 + 10);
+
+        frame.first().unwrap();
+        let mut a1 = crate::fp::model::HFork::default();
+        a1.slots(10000);
+        let mut tr = crate::fp::model::Tr::new(frame.cursor, frame.chain, "A1, look-up");
+        let mut slot = 0;
+        let forest = crate::fp::forest::forest_pad(
+            &mut a1,
+            &mut tr,
+            &mut slot,
+            crate::fp::forest::accepted_forest(3, false),
+        )
+        .unwrap();
+        let mut attention = crate::fp::attention::read_messages(
+            &mut a1,
+            &mut tr,
+            &mut slot,
+            crate::fp::attention::AttentionShape::accepted(),
+            forest,
+        )
+        .unwrap();
+        drop(tr);
+        frame.later().unwrap();
+        crate::fp::attention::build_tables(&mut attention).unwrap();
+        let mut tr = crate::fp::model::Tr::new(frame.cursor, frame.chain, "A1, smallness test");
+        let trits = tr.trits(1276, 128).unwrap();
+        drop(tr);
+        frame.later().unwrap();
+        let mut tr = crate::fp::model::Tr::new(frame.cursor, frame.chain, "A1, smallness test, digits");
+        let mut digits = crate::fp::forest::forest_pad(
+            &mut a1,
+            &mut tr,
+            &mut slot,
+            crate::fp::forest::accepted_forest(3, true),
+        )
+        .unwrap();
+        attention.prepare(&mut a1, &mut tr, slot, &digits).unwrap();
+        attention.add_main_claims(&mut a1).unwrap();
+        attention.smallness(&mut digits, &trits, &mut a1).unwrap();
+        assert_eq!(a1.n_claim, attention.n_lin);
+        attention.coefficients(&digits, &mut a1);
+        let equation = attention.door_h(3, &a1).unwrap();
+        frame.close(&equation).unwrap();
+        let close_a1 = file_layout
+            .fields()
+            .iter()
+            .enumerate()
+            .filter(|(_, field)| field.message.name == "hiding sum" && field.message.context == "A1")
+            .last()
+            .unwrap()
+            .0;
+        assert_eq!(frame.cursor.index, close_a1 + 8);
     }
 }
