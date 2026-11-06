@@ -116,7 +116,7 @@ pub fn fold_output(
         .map(|(_, &oracle)| statement.oracles[oracle as usize].shape.main_rows as usize)
         .sum();
     let mask_ell = statement.mask[mask_code as usize].ell as usize;
-    SingleRows {
+    let out = SingleRows {
         code,
         mask_code,
         layout,
@@ -131,7 +131,12 @@ pub fn fold_output(
             fold_mask_weights(k, h, mask_ell, &gamma),
         ],
         target: claim,
+    };
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_FOLD_TARGET {:016x}", claim.0[0]);
     }
+    out
 }
 
 #[derive(Debug, Clone)]
@@ -161,7 +166,12 @@ pub fn single_rows_symbols(rows: &SingleRows, opened: &Opened, positions: usize)
                 mask[layout.mask_first[w] as usize + b] = value;
             }
         }
-        out.push(fold_low(main, &rows.gamma)[0]);
+        let folded_main = fold_low(main, &rows.gamma);
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() && layout.k == 4 && layout.members.len() == 1 && i == 0 {
+            eprintln!("RUST_SHARED_SYMBOL main0={:016x} main1={:016x} y={:016x}", opened.of[0][i].main[0].0[0], opened.of[0][i].main.get(1).map_or(E::ZERO, |x| *x).0[0], folded_main[0].0[0]);
+        }
+        out.push(folded_main[0]);
         for (w, _) in layout.members.iter().enumerate() {
             if layout.kept[w] {
                 out.extend_from_slice(&opened.of[w][i].main);
@@ -172,7 +182,12 @@ pub fn single_rows_symbols(rows: &SingleRows, opened: &Opened, positions: usize)
         }
         if rows.masks == 2 {
             let fresh = &opened.of[layout.members.len()][i].mask;
-            out.push(fold_low(fresh.clone(), &rows.gamma[..layout.h as usize])[0]);
+            let folded_fresh = fold_low(fresh.clone(), &rows.gamma[..layout.h as usize]);
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_SHARED").is_some() && layout.k == 4 && layout.members.len() == 1 && i == 0 {
+                eprintln!("RUST_FRESH_SYMBOL mask0={:016x} y={:016x}", fresh[0].0[0], folded_fresh[0].0[0]);
+            }
+            out.push(folded_fresh[0]);
         }
     }
     out
@@ -546,6 +561,10 @@ pub fn switch_rows(
         );
     }
     old.target = rows.target;
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_SHARED_CS_OLD target={:016x}", old.target.0[0]);
+    }
     out.push(old);
     for (i, &old_oracle) in kept.iter().enumerate() {
         for sample in &statement.oracles[old_oracle as usize].sample_rows {
@@ -592,6 +611,10 @@ pub fn switch_rows(
             switch_lift(form, log_ell(code), target.main, row_bits, table_bits),
         );
         switch_add_rest_base(&mut main, oracle, target.rest.part, &main_tail, &tail);
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() {
+            eprintln!("RUST_SHARED_CS_GEN row=0 target={:016x}", main.target.0[0]);
+        }
         out.push(main);
 
         let mut kept_row = 0usize;
@@ -660,6 +683,10 @@ pub fn switch_rows(
                 );
             }
             switch_add_rest_base(&mut row, oracle, target.rest.part, &mask_tail[j], &tail);
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_SHARED").is_some() {
+                eprintln!("RUST_SHARED_CS_GEN row={} target={:016x}", rows.mask_row(j as u32), row.target.0[0]);
+            }
             out.push(row);
         }
     }

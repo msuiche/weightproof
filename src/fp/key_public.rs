@@ -161,7 +161,7 @@ pub fn item(out: &mut Vec<u8>, name: &str, value: &[u8]) {
     put_bytes(out, value);
 }
 
-fn code(out: &mut Vec<u8>, value: &CodeSize) {
+pub(crate) fn code(out: &mut Vec<u8>, value: &CodeSize) {
     put_u64(out, value.log_n as u64);
     put_u64(out, value.ell);
     put_u64(out, value.r);
@@ -195,11 +195,11 @@ fn oracle_shape(out: &mut Vec<u8>, value: &crate::fp::claims::OracleShape) {
     put_u64(out, value.mask_rows);
     put_u64(out, value.answers as u64);
 }
-fn notice(out: &mut Vec<u8>, value: &OracleNotice) {
+pub(crate) fn notice(out: &mut Vec<u8>, value: &OracleNotice) {
     oracle_shape(out, &value.shape);
     put_u64(out, value.leaf_class as u64);
 }
-fn stage(out: &mut Vec<u8>, value: &IoppStage) {
+pub(crate) fn stage(out: &mut Vec<u8>, value: &IoppStage) {
     put_u64(out, value.code as u64);
     put_u64(out, value.mask_code as u64);
     put_u64(out, value.k as u64);
@@ -221,7 +221,7 @@ fn foldeq_shape(out: &mut Vec<u8>, value: &FoldeqShape) {
     put_u64(out, value.leaf_class as u64);
     put_u64(out, value.columns);
 }
-fn lin_shape(out: &mut Vec<u8>, value: &LinShape) {
+pub(crate) fn lin_shape(out: &mut Vec<u8>, value: &LinShape) {
     foldeq_shape(out, &value.fold);
     put_u64(out, value.k_lo as u64);
     put_u64(out, value.matrix_rows);
@@ -271,7 +271,7 @@ fn wf_public(out: &mut Vec<u8>, value: &WfPublic) {
     put_vec(out, &value.stages, stage);
     choice(out, &value.choice);
 }
-fn binding(out: &mut Vec<u8>, value: &LinBindingShape) {
+pub(crate) fn binding(out: &mut Vec<u8>, value: &LinBindingShape) {
     put_u64(out, value.log_leaves as u64);
     put_u64(out, value.salt_bytes as u64);
 }
@@ -333,6 +333,34 @@ mod tests {
     }
 
     #[test]
+    fn shared_parameters_match_oracle() {
+        let policy =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
+        let layout =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
+        let kl = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/KL.bin");
+        let configuration = configuration_digest(&[policy, layout, kl]);
+        let fixed = crate::fp::key_fixture::accepted_fixed(configuration);
+        let key = include_bytes!("../../spikes/flashprove/examples/accepted-proof/ivk/key.bin");
+        let (root, record, _) = crate::fp::heads::parse_key_record(key, 256).unwrap();
+        let table = IndexName::new(&root, &configuration, record);
+        let binding = crate::fp::lin::LinBindingRoot {
+            digest: Digest::ZERO,
+            places: 1,
+        };
+        let public = LinPublic::shared(
+            &fixed,
+            &table,
+            include_bytes!("../../spikes/plans/key-shared-plan.bin"),
+            &binding,
+        );
+        assert_eq!(
+            public.parameter_bytes.as_slice(),
+            include_bytes!("../../spikes/plans/key-shared-parameters.bin")
+        );
+    }
+
+    #[test]
     fn accepted_public_bytes_match_oracle() {
         let policy =
             include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
@@ -345,6 +373,78 @@ mod tests {
             &key_public_bytes(&fixed)[32..],
             include_bytes!("../../spikes/plans/key-public.bin")
         );
+    }
+}
+
+pub struct LinPublic {
+    pub parameter_bytes: Vec<u8>,
+    pub parameters: Digest,
+    pub statement: Vec<u8>,
+    pub places: u64,
+    pub random: Digest,
+}
+
+impl LinPublic {
+    pub fn shared(
+        fixed: &KeyFixed,
+        table: &IndexName,
+        plan_bytes: &[u8],
+        binding_root: &crate::fp::lin::LinBindingRoot,
+    ) -> Self {
+        let mut parameter_bytes = Vec::new();
+        put_bytes(&mut parameter_bytes, plan_bytes);
+        item(
+            &mut parameter_bytes,
+            "configuration",
+            &fixed.configuration.to_le_bytes(),
+        );
+        item(&mut parameter_bytes, "codes", &{
+            let mut out = Vec::new();
+            put_vec(&mut out, &fixed.codes.base, code);
+            put_vec(&mut out, &fixed.codes.mask, code);
+            out
+        });
+        item(&mut parameter_bytes, "the test on the table", &{
+            let mut out = Vec::new();
+            lin_shape(&mut out, &fixed.lin);
+            out
+        });
+        let parameters = {
+            let mut h = Hasher::new(PARAMETERS, 1, &[0; 8], 32);
+            h.push(&parameter_bytes);
+            h.finish()
+        };
+        let mut statement = Vec::new();
+        item(&mut statement, "table", &index_name_bytes(table));
+        item(
+            &mut statement,
+            "the binding tree's root",
+            &binding_root.digest.to_le_bytes(),
+        );
+        Self {
+            parameter_bytes,
+            parameters,
+            statement,
+            places: binding_root.places,
+            random: binding_root.digest,
+        }
+    }
+
+    pub fn first_query(&self, label: u64) -> FirstQuery {
+        let run = {
+            let mut h = Hasher::new(RUN, label, &[0; 8], 32);
+            h.push_digest(&self.parameters);
+            h.push_digest(&self.random);
+            h.finish()
+        };
+        FirstQuery {
+            label,
+            parameters: self.parameters,
+            statement: self.statement.clone(),
+            record: Vec::new(),
+            salted: true,
+            run: Some(run),
+        }
     }
 }
 

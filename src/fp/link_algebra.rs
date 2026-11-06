@@ -317,6 +317,7 @@ impl LinkAlgebra {
         }
         self.iopp.base(
             &stages,
+            stages.len() - 1,
             row,
             target_star,
             lambda,

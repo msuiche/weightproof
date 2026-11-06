@@ -246,6 +246,35 @@ pub fn plan_iopp(
     first_mask_roots: bool,
     masks_ride: bool,
 ) -> Result<(), FpError> {
+    let next_tree_number = first_trees
+        .iter()
+        .map(|tree| tree.number.saturating_add(1))
+        .max()
+        .unwrap_or(0);
+    plan_iopp_at(
+        messages,
+        setting,
+        scope,
+        where_,
+        stages,
+        first_trees,
+        first_mask_roots,
+        masks_ride,
+        next_tree_number,
+    )
+}
+
+pub fn plan_iopp_at(
+    messages: &mut Vec<PlanMessage>,
+    setting: &Setting,
+    scope: Scope,
+    where_: &str,
+    stages: &[Stage],
+    first_trees: &[TreeSize],
+    first_mask_roots: bool,
+    masks_ride: bool,
+    next_tree_number: u32,
+) -> Result<(), FpError> {
     if stages.len() < 2 {
         return Err(FpError::Range {
             context: "iopp-stage-count",
@@ -255,11 +284,7 @@ pub fn plan_iopp(
         messages.push(n); // BAT before the first fold
     }
     let mut trees = first_trees.to_vec();
-    let mut next_tree_number = trees
-        .iter()
-        .map(|tree| tree.number.saturating_add(1))
-        .max()
-        .unwrap_or(0);
+    let mut next_tree_number = next_tree_number;
     for i in 0..stages.len() - 1 {
         let stage = &stages[i];
         let next = &stages[i + 1];

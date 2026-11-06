@@ -117,6 +117,17 @@ impl Chain {
         work_bits: u32,
         nonce: u64,
     ) -> bool {
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_ROUNDS").is_some() {
+            eprintln!("RUST_ROUND kind={} round={}", kind as u64, self.round);
+        }
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_MSG").is_some() {
+            eprintln!(
+                "RUST_MSG label={} round={} kind={} work={} nonce={} message={:?}",
+                self.label, self.round, kind as u64, work_bits, nonce, message
+            );
+        }
         let first = {
             let mut h = Hasher::new(
                 CHAIN_QUERY | (self.label << 16),
@@ -131,7 +142,15 @@ impl Chain {
             h.push_u64(nonce);
             h.finish_words()
         };
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_MSG").is_some() {
+            eprintln!("RUST_HASH round={} first={:016x} {:016x} {:016x} {:016x} {:016x} {:016x} {:016x} {:016x}", self.round, first[0], first[1], first[2], first[3], first[4], first[5], first[6], first[7]);
+        }
         if first[0].trailing_zeros() < work_bits {
+            #[cfg(feature = "std")]
+            if kind == ChainKind::Positions {
+                eprintln!("RUST_WORK nonce={} bits={} rho={:08x} round={} message={:?} first={:016x}", nonce, work_bits, self.rho.0[0], self.round, message, first[0]);
+            }
             return false;
         }
         self.query_start = self.rho;
@@ -153,6 +172,10 @@ impl Chain {
         self.nonce = nonce;
         self.words = first;
         self.next = if work_bits == 0 { 4 } else { 8 };
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_RHO").is_some() {
+            eprintln!("RUST_RHO label={} round={} rho={:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}", self.label, self.round - 1, self.rho.0[0], self.rho.0[1], self.rho.0[2], self.rho.0[3], self.rho.0[4], self.rho.0[5], self.rho.0[6], self.rho.0[7]);
+        }
         true
     }
 

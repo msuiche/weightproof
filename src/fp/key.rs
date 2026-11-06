@@ -10,7 +10,7 @@ use crate::fp::{
     analysis::{Scope, Setting, Stage},
     error::FpError,
     layout::{ChainPlan, FilePlan, PlanMessage},
-    plan::{nonce, plan_iopp, plan_open, TreeSize},
+    plan::{nonce, plan_iopp, plan_iopp_at, plan_open, TreeSize},
 };
 
 /// Solved trees and proximity stages used by LIN's three chains.
@@ -129,7 +129,7 @@ pub(crate) fn lin_shared(
             !lin.masks_ahead,
             lin.masks_ride,
         )?;
-        plan_iopp(
+        plan_iopp_at(
             messages,
             setting,
             shared,
@@ -138,6 +138,7 @@ pub(crate) fn lin_shared(
             &lin.omega_trees,
             true,
             lin.masks_ride,
+            5,
         )?;
     } else {
         let omega = lin.omega_trees.first().ok_or(FpError::Range {
@@ -171,7 +172,7 @@ pub(crate) fn lin_second(
         context: "lin-omega-tree",
     })?;
     trees.push(omega.clone());
-    plan_iopp(
+    plan_iopp_at(
         messages,
         setting,
         request,
@@ -180,6 +181,7 @@ pub(crate) fn lin_second(
         &trees,
         !lin.masks_ahead,
         lin.masks_ride,
+        7,
     )
 }
 
@@ -318,18 +320,18 @@ mod tests {
                 omega_stages,
                 own_stages,
                 folded_trees: vec![tree("tree of the folded row; fold mask", 17, 456)
-                    .numbered(2)
+                    .numbered(0)
                     .rooted("table, folded row")],
                 omega_trees: vec![
                     tree("tree of Omega", 18, 96)
-                        .numbered(3)
+                        .numbered(1)
                         .rooted("table, Omega"),
                     tree(
                         "tree of the mask of the split between Omega and the folded row",
                         13,
                         24,
                     )
-                    .numbered(4)
+                    .numbered(2)
                     .rooted("table, Omega"),
                 ],
                 w_trees: vec![tree("tree of W; fold mask", 18, 48)

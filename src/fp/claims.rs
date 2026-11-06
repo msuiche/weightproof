@@ -269,10 +269,10 @@ impl Statement {
         let mut main_first = vec![u64::MAX; group.members.len()];
         let mut main_used = 0u64;
         for i in main_order {
-            if group.kept[i] {
+            let oracle = group.members[i];
+            if group.kept[i] || self.oracles[oracle as usize].shape.main_rows == 0 {
                 continue;
             }
-            let oracle = group.members[i];
             main_first[i] = main_used;
             main_used += 1u64 << self.row_bits(oracle, Part::Main);
         }
@@ -448,6 +448,10 @@ pub fn bat_combine(
         add_to_group_row(statement, layout, row, power, &mut out);
         power *= challenge;
     }
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_SHARED_BAT target={:016x} d0={:016x} d1={:016x} d2={:016x} d3={:016x}", out.target.0[0], out.d.get(0).map_or(E::ZERO, |x| *x).0[0], out.d.get(1).map_or(E::ZERO, |x| *x).0[0], out.d.get(2).map_or(E::ZERO, |x| *x).0[0], out.d.get(3).map_or(E::ZERO, |x| *x).0[0]);
+    }
     out
 }
 
@@ -586,6 +590,12 @@ pub fn send_form(statement: &Statement, oracle: OracleId, z: &[E], beta: E, answ
     }
     if has_mask {
         row.add(oracle, Part::Mask, on_mask);
+    }
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() && has_mask && !has_main {
+        for unit in &row.units {
+            eprintln!("RUST_SEND_UNIT index={} coeff={:016x}", unit.index, unit.coefficient.0[0]);
+        }
     }
     row
 }

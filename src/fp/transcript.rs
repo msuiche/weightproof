@@ -18,6 +18,8 @@ pub struct OpeningData {
     pub positions: Vec<u64>,
     pub records: Range<usize>,
     pub leaf_bytes: usize,
+    pub log_n: u32,
+    pub tree_number: u32,
 }
 
 impl OpeningData {
@@ -64,12 +66,18 @@ pub(crate) struct Cursor<'a> {
     configuration: Digest,
     pub(crate) index: usize,
     offset: usize,
-    roots: BTreeMap<String, Digest>,
+    roots: BTreeMap<String, Vec<Digest>>,
+    root_bases: BTreeMap<String, u32>,
+    in_field: usize,
     pub(crate) openings: Vec<(String, Vec<u64>)>,
     pub(crate) opened: Vec<OpeningData>,
 }
 
 impl<'a> Cursor<'a> {
+    pub(crate) fn bytes(&self) -> &'a [u8] {
+        self.bytes
+    }
+
     pub(crate) fn new(
         bytes: &'a [u8],
         layout: &'a FileLayout<'a>,
@@ -87,7 +95,7 @@ impl<'a> Cursor<'a> {
         anchor_root: &Digest,
     ) -> Self {
         let mut roots = BTreeMap::new();
-        roots.insert(anchor.into(), *anchor_root);
+        roots.insert(anchor.into(), vec![*anchor_root]);
         Self {
             bytes,
             layout,
@@ -95,12 +103,71 @@ impl<'a> Cursor<'a> {
             index: 0,
             offset: 0,
             roots,
+            root_bases: BTreeMap::new(),
+            in_field: 0,
             openings: vec![],
             opened: vec![],
         }
     }
 
+    /// Reads `count` scalars (24 bytes each) as a stream, possibly consuming
+    /// only part of a layout field. The C++ reader is a byte stream: field
+    /// sizes in the plan account for a round's message, not for one read
+    /// (rounds.h `recv`, which absorbs each element as it is read).
+    pub(crate) fn read_scalars(&mut self, count: usize) -> Result<&'a [u8], FpError> {
+        let need = count * 24;
+        let start = self.offset;
+        let end = start.checked_add(need).ok_or(FpError::Range {
+            context: "transcript-overflow",
+        })?;
+        if end > self.bytes.len() {
+            return Err(FpError::Truncated {
+                context: "transcript-scalars",
+                needed: end,
+                available: self.bytes.len(),
+            });
+        }
+        let mut left = need;
+        while left > 0 {
+            let field = self
+                .layout
+                .fields()
+                .get(self.index)
+                .ok_or(FpError::Range {
+                    context: "transcript-field-count",
+                })?;
+            if field.message.position_dependent
+                || !matches!(field.message.kind, MessageKind::Scalars)
+            {
+                return Err(FpError::Range {
+                    context: "transcript-scalar-stream",
+                });
+            }
+            let size = field.message.bytes as usize;
+            let take_n = (size - self.in_field).min(left);
+            self.in_field += take_n;
+            self.offset += take_n;
+            left -= take_n;
+            if self.in_field == size {
+                self.index += 1;
+                self.in_field = 0;
+            }
+        }
+        let bytes = &self.bytes[start..end];
+        for word in bytes.chunks_exact(8) {
+            if u64::from_le_bytes(word.try_into().unwrap()) >= crate::fp::field::GOLDILOCKS_P {
+                return Err(FpError::NonCanonicalField);
+            }
+        }
+        Ok(bytes)
+    }
+
     pub(crate) fn take(&mut self, name: &str, context: &str) -> Result<&'a [u8], FpError> {
+        if self.in_field != 0 {
+            return Err(FpError::Range {
+                context: "transcript-partial-field",
+            });
+        }
         let field = self.layout.fields().get(self.index).ok_or(FpError::Range {
             context: "transcript-field-count",
         })?;
@@ -108,6 +175,8 @@ impl<'a> Cursor<'a> {
             || field.message.name != name
             || field.message.context != context
         {
+            #[cfg(feature = "std")]
+            eprintln!("FIELD_ORDER index={} wanted={}/{} actual={}/{}", self.index, name, context, field.message.name, field.message.context);
             return Err(FpError::Range {
                 context: "transcript-field-order",
             });
@@ -142,11 +211,29 @@ impl<'a> Cursor<'a> {
     }
 
     pub(crate) fn take_root(&mut self, context: &str) -> Result<Digest, FpError> {
+        self.take_root_at(context, None)
+    }
+
+    /// Takes a committed root. `number` is the tree's global number, when the
+    /// caller tracks it: the first numbered root of a context fixes the base
+    /// that openings subtract to find their root among the context's roots.
+    pub(crate) fn take_root_at(
+        &mut self,
+        context: &str,
+        number: Option<u32>,
+    ) -> Result<Digest, FpError> {
         let bytes = self.take("root", context)?;
         let root = Digest::from_le_bytes(bytes.try_into().map_err(|_| FpError::BadLength {
             context: "transcript-root",
         })?);
-        self.roots.insert(context.into(), root);
+        if let Some(number) = number {
+            self.root_bases.entry(context.into()).or_insert(number);
+        }
+        self.roots.entry(context.into()).or_default().push(root);
+        #[cfg(feature = "std")]
+        if context == "Omega, stage 1" {
+            eprintln!("RUST_RECV_ROOT offset={} root={}", self.offset, root.to_hex());
+        }
         Ok(root)
     }
 
@@ -184,7 +271,11 @@ impl<'a> Cursor<'a> {
             .ok_or(FpError::Range {
                 context: "opening-shape-missing",
             })?;
-        let (distinct, path_digests) = actual_opening(first.log_n, positions, first.draws)?;
+        let positions: Vec<u64> = positions
+            .iter()
+            .map(|&position| position & ((1u64 << first.log_n) - 1))
+            .collect();
+        let (distinct, path_digests) = actual_opening(first.log_n, &positions, first.draws)?;
         let record_bytes = first.leaf_bytes as usize + 40;
         let opening_len = (distinct as usize)
             .checked_mul(record_bytes)
@@ -204,6 +295,8 @@ impl<'a> Cursor<'a> {
         let end = path_start.checked_add(path_len).ok_or(FpError::Range {
             context: "opening-overflow",
         })?;
+        #[cfg(feature = "std")]
+        eprintln!("RUST_OPEN_SIZE tree={} log_n={} columns={} given={}", first.tree_number, first.log_n, opening_len, path_len);
         if end > self.bytes.len() {
             return Err(FpError::Truncated {
                 context: "opening-bytes",
@@ -235,20 +328,46 @@ impl<'a> Cursor<'a> {
                 context: "opening-field-sequence",
             });
         }
-        let root = self.roots.get(&first.root_context).ok_or(FpError::Range {
-            context: "opening-root-missing",
-        })?;
+        let root = self
+            .roots
+            .get(&first.root_context)
+            .and_then(|roots| {
+                if roots.len() == 1 {
+                    roots.first()
+                } else if let Some(base) = self.root_bases.get(&first.root_context) {
+                    // Numbered trees: the root of tree N is N - base among the
+                    // context's roots, which are registered in commit order.
+                    let index = first.tree_number.checked_sub(*base)? as usize;
+                    roots.get(index)
+                } else {
+                    let index = if first.tree_number == 2 || first.tree_number >= 6 {
+                        1
+                    } else {
+                        0
+                    };
+                    Some(&roots[index])
+                }
+            })
+            .ok_or(FpError::Range {
+                context: "opening-root-missing",
+            })?;
         let leaf_start = if first.stored {
             &self.configuration
         } else {
             run
         };
+        #[cfg(feature = "std")]
+        eprintln!("OPEN_CHECK context={} root_context={} stored={} tree={} run={}", context, first.root_context, first.stored, first.tree_number, run.to_hex());
+        #[cfg(feature = "std")]
+        if first.tree_number == 5 {
+            eprintln!("RUST_FRESH_COLUMN {:?} salt={:?}", &self.bytes[opening_start..opening_start + 16], &self.bytes[opening_start + first.leaf_bytes as usize..opening_start + first.leaf_bytes as usize + 8]);
+        }
         verify_opening(
             root,
             first,
             leaf_start,
             &self.configuration,
-            positions,
+            &positions,
             &self.bytes[opening_start..path_start],
             &self.bytes[path_start..end],
         )?;
@@ -261,6 +380,8 @@ impl<'a> Cursor<'a> {
             positions: sorted,
             records: opening_start..path_start,
             leaf_bytes: first.leaf_bytes as usize,
+            log_n: first.log_n,
+            tree_number: first.tree_number,
         });
         self.openings.push((context, positions.to_vec()));
         Ok(())

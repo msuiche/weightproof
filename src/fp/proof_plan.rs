@@ -96,7 +96,24 @@ fn plan_link(
     setting: &Setting,
     link: &RequestLinkInput,
     previous: Option<(&str, &GroupSize, &[TreeSize])>,
+    next_tree: &mut u32,
 ) -> Result<Vec<TreeSize>, FpError> {
+    // Tree numbers are global over the request, in the order the trees are
+    // committed: the leaf hash's domain tag and the root of each opening use
+    // them. The input leaves them at zero.
+    let mut initial_trees = link.initial_trees.clone();
+    for tree in &mut initial_trees {
+        tree.number = *next_tree;
+        *next_tree += 1;
+    }
+    // The initial send commits further trees that the input does not model
+    // (the fold mask): they take numbers as well.
+    *next_tree += (link.initial_roots as u32).saturating_sub(initial_trees.len() as u32);
+    let mut later_trees = link.later_trees.clone();
+    for tree in &mut later_trees {
+        tree.number = *next_tree;
+        *next_tree += 1;
+    }
     if link.plain != 0 {
         messages.push(scalars("plain scalars", &link.name, link.plain)?);
     }
@@ -121,10 +138,10 @@ fn plan_link(
     link.subproof
         .plan_own(messages, setting, &link.subproof_name)?;
 
-    let mut trees = link.initial_trees.clone();
+    let mut trees = initial_trees;
     for moment in 0..2 {
         plan_send(messages, setting, Scope::Request, &link.name, 1, 1)?;
-        trees.push(link.later_trees[moment].clone());
+        trees.push(later_trees[moment].clone());
         if moment == 0 {
             plan_rng(
                 messages,
@@ -159,9 +176,10 @@ pub fn plan_proof(input: &ProofLayoutInput) -> Result<FilePlan, FpError> {
     let mut first = vec![];
     plan_chain_start(&mut first, "first chain", true);
     let mut previous_trees = Vec::new();
+    let mut next_tree = 0u32;
     for (index, link) in input.links.iter().enumerate() {
         previous_trees = if index == 0 {
-            plan_link(&mut first, &input.setting, link, None)?
+            plan_link(&mut first, &input.setting, link, None, &mut next_tree)?
         } else {
             let previous = &input.links[index - 1];
             plan_link(
@@ -169,6 +187,7 @@ pub fn plan_proof(input: &ProofLayoutInput) -> Result<FilePlan, FpError> {
                 &input.setting,
                 link,
                 Some((&previous.name, &previous.fold, &previous_trees)),
+                &mut next_tree,
             )?
         };
     }
@@ -189,13 +208,17 @@ pub fn plan_proof(input: &ProofLayoutInput) -> Result<FilePlan, FpError> {
             &previous_trees,
         )?;
     }
+    let last_tree = TreeSize {
+        number: next_tree,
+        ..input.last_tree.clone()
+    };
     plan_iopp(
         &mut first,
         &input.setting,
         Scope::Request,
         "last group",
         &input.last_stages,
-        core::slice::from_ref(&input.last_tree),
+        core::slice::from_ref(&last_tree),
         false,
         true,
     )?;
@@ -226,7 +249,7 @@ pub fn plan_proof(input: &ProofLayoutInput) -> Result<FilePlan, FpError> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::fp::{
         codes::CodeSize,

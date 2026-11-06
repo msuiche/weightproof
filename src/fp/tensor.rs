@@ -473,6 +473,16 @@ pub fn inner(a: &[E], b: &[E]) -> E {
     out
 }
 
+pub fn block_rows(low: &[E], token: &[E]) -> Vec<E> {
+    let mut out = vec![E::ZERO; low.len() * token.len()];
+    for (c2, &weight) in low.iter().enumerate() {
+        for (t, &value) in token.iter().enumerate() {
+            out[c2 * token.len() + t] = weight * value;
+        }
+    }
+    out
+}
+
 pub fn eq_table(point: &[E]) -> Vec<E> {
     let mut out = vec![E::ONE];
     for &x in point {
