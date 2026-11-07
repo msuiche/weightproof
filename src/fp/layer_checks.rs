@@ -1671,12 +1671,20 @@ impl LayerCheck<'_> {
             let offset = self.table_at(0, "Z_a");
             let ts = self.run.fixture.tensor("s");
             let tu = self.run.fixture.tensor("u");
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_SHARED").is_some() {
+                eprintln!("RUST_NORM_TENSORS s_off={} s_nl={} s_cnt={} s_j={} u_off={} u_nl={} u_cnt={} u_j={}", ts.off, ts.nl, ts.cnt, ts.j, tu.off, tu.nl, tu.cnt, tu.j);
+            }
             let mut a = Aff::slot(stack.hd.s_l);
             let mut b = Aff::slot(stack.hd.s_r);
             for layer in 0..LAM {
                 for kh in 0..F_WIDTH / S2 {
                     let weight = e[(layer * (F_WIDTH / S2) + kh) as usize];
                     a.add(&self.long_a(offset, ts, layer, kh), weight);
+                    #[cfg(feature = "std")]
+                    if std::env::var_os("DUMP_SHARED").is_some() && layer == 0 && kh < 3 {
+                        eprintln!("RUST_LONG_A layer={} kh={} last={:016x}", layer, kh, a.e.last().map_or(0, |entry| entry.idx));
+                    }
                     b.add(&self.long_a(offset, tu, layer, kh), weight);
                 }
             }
@@ -2299,7 +2307,11 @@ impl LayerCheck<'_> {
         };
         for (ti, tree) in f.trees.iter().enumerate().take(array_of.len()) {
             let (born, array) = &array_of[ti];
-            for row in &tree.rows {
+            for (row_index, row) in tree.rows.iter().enumerate() {
+                #[cfg(feature = "std")]
+                if std::env::var_os("DUMP_SHARED").is_some() && ti == 0 {
+                    eprintln!("RUST_DOOR_ROW_L row={} hash={:016x} first={:016x}", row_index, row.l.iter().fold(0u64, |a, x| a ^ x.0[0]), row.l.first().map_or(E::ZERO, |x| *x).0[0]);
+                }
                 if row.coef.len() != tree.r as usize || row.l.len() != tree.k as usize {
                     return Err(FpError::Range {
                         context: "request-row-form",

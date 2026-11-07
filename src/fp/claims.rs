@@ -610,7 +610,7 @@ pub fn send_form(statement: &Statement, oracle: OracleId, z: &[E], beta: E, answ
         row.add(oracle, Part::Mask, on_mask);
     }
     #[cfg(feature = "std")]
-    if std::env::var_os("DUMP_SHARED").is_some() && oracle == 5 {
+    if std::env::var_os("DUMP_SHARED").is_some() && oracle == 5 && !row.forms.is_empty() {
         let vars = row.forms.iter().flat_map(|main| main.form.tensors.iter().map(|tensor| tensor.vars())).max().unwrap_or(0);
         let point = vec![E::ONE + E::ONE; vars as usize];
         eprintln!("RUST_SAMPLE_FORM oracle={} hash={:016x}", oracle, row.forms[0].form.mle(&point).0[0]);

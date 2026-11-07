@@ -400,6 +400,12 @@ impl HFork {
         }
         self.c0 += weight * form.c;
         #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() && self.n_claim == 78 {
+            for entry in &form.e {
+                eprintln!("RUST_CLAIM78_ENT tree={} row={} idx={} coef={:016x}", entry.tree, entry.row, entry.idx, entry.coef.0[0]);
+            }
+        }
+        #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() && self.n_claim == 76 {
             for &(slot, coeff) in &form.s {
                 eprintln!("RUST_CLAIM76_SLOT {} {:016x}", slot, coeff.0[0]);
@@ -407,7 +413,7 @@ impl HFork {
         }
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() && self.n_claim <= 1600 {
-            eprintln!("RUST_PUSH_CLAIM index={} weight={:016x} constant={:016x} total={:016x} sh={:016x}", self.n_claim, weight.0[0], form.c.0[0], self.c0.0[0], form.s.iter().fold(0u64, |a, &(slot, coeff)| a ^ coeff.0[0] ^ slot as u64));
+            eprintln!("RUST_PUSH_CLAIM index={} weight={:016x} constant={:016x} total={:016x} sh={:016x} eh={:016x}", self.n_claim, weight.0[0], form.c.0[0], self.c0.0[0], form.s.iter().fold(0u64, |a, &(slot, coeff)| a ^ coeff.0[0] ^ slot as u64), form.e.iter().fold(0u64, |a, entry| a ^ entry.coef.0[0] ^ entry.idx ^ ((entry.tree as u64) << 32) ^ ((entry.row as u64) << 40)));
         }
     }
 

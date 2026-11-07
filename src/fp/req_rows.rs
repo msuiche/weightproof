@@ -215,14 +215,23 @@ pub fn laid_form(
 ) -> Result<Form, FpError> {
     let mut form = Form::default();
     for block in blocks {
-        form.add(laid_tensor(
+        let tensor = laid_tensor(
             block,
             table_row_bits,
             table_place_bits,
             on_i,
             on_c,
             scalar,
-        )?);
+        )?;
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() {
+            let vars = tensor.vars();
+            let point = vec![E::ONE + E::ONE; vars as usize];
+            let mut folded = tensor.clone();
+            folded.fix_low(&point, vars);
+            eprintln!("RUST_LAID_BLOCK first_i={} first_c={} value={:016x}", block.first_i, block.first_c, folded.at(0).0[0]);
+        }
+        form.add(tensor);
     }
     Ok(form)
 }
@@ -236,10 +245,16 @@ pub fn req_row(
     mut where_oracle: impl FnMut(usize, usize) -> Result<u32, FpError>,
 ) -> Result<Row, FpError> {
     let mut row = Row::default();
-    for term in &equation.terms {
+    for (term_index, term) in equation.terms.iter().enumerate() {
         let array = layout.find(term.born, &term.array).ok_or(FpError::Range {
             context: "request-array",
         })?;
+        if term_index == 0 {
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_SHARED").is_some() {
+                eprintln!("RUST_EQ_TERM blocks={} first={:?} on_i_lo={:?} on_i_hi={:?} on_c_values={:?} scalar={:016x}", array.blocks.len(), array.blocks.first().map(|b| (b.first_i, b.bits_i, b.first_c, b.bits_c, b.first_row, b.row_bits, b.first_place, b.place_bits, b.i_is_low)), term.on_rows.lo.first().map(|x| x.0[0]), term.on_rows.hi.first().map(|x| x.0[0]), term.on_columns.values.as_ref().and_then(|v| v.first().map(|x| x.0[0])), term.scale.0[0]);
+            }
+        }
         let oracle = where_oracle(term.born, array.message)?;
         let shape = &statement.oracles[oracle as usize].shape;
         let row_bits = crate::fp::tensor::ceil_log2(shape.main_rows);
@@ -252,17 +267,21 @@ pub fn req_row(
         if !laid_ok(&matrices, row_bits, place_bits) {
             return Err(FpError::Range { context: "request-layout" });
         }
-        row.add_form(
-            oracle,
-            laid_form(
-                &array.blocks,
-                row_bits,
-                place_bits,
-                &term.on_rows,
-                &term.on_columns,
-                term.scale,
-            )?,
-        );
+        let form = laid_form(
+            &array.blocks,
+            row_bits,
+            place_bits,
+            &term.on_rows,
+            &term.on_columns,
+            term.scale,
+        )?;
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() {
+            let vars = form.tensors.iter().map(|tensor| tensor.vars()).max().unwrap_or(0);
+            let point = vec![E::ONE + E::ONE; vars as usize];
+            eprintln!("RUST_EQ_FORM oracle={} hash={:016x}", oracle, form.mle(&point).0[0]);
+        }
+        row.add_form(oracle, form);
     }
     if !equation.on_masks.is_empty() {
         let messages = &shape.links[link].messages;
