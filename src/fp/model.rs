@@ -400,6 +400,12 @@ impl HFork {
         }
         self.c0 += weight * form.c;
         #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() && self.n_claim == 275 {
+            for entry in &form.e {
+                eprintln!("RUST_CLAIM275_ENT tree={} row={} idx={} coef={:016x}", entry.tree, entry.row, entry.idx, entry.coef.0[0]);
+            }
+        }
+        #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() && self.n_claim == 78 {
             for entry in &form.e {
                 eprintln!("RUST_CLAIM78_ENT tree={} row={} idx={} coef={:016x}", entry.tree, entry.row, entry.idx, entry.coef.0[0]);

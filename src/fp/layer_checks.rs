@@ -346,6 +346,10 @@ impl<'a> LayerCheck<'a> {
 
     fn row5_at(&self, point: &str, i: u64) -> Row5 {
         let offset = self.table_at(4, point);
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() && i == 0 {
+            eprintln!("RUST_ROW5_OFFSET point={} {}", point, offset);
+        }
         let tensor = self.run.fixture.tensor("row");
         let mut digits = Vec::with_capacity(99);
         for j in 0..99 {
@@ -1577,7 +1581,7 @@ impl LayerCheck<'_> {
             let mut a = Aff::slot(self.run.wpl.s_l);
             for i in 0..8u64 {
                 for kh in 0..D / S2 {
-                    for limb in 0..4 {
+                    for limb in 0..5 {
                         let form = if i == 0 {
                             self.u3at(t_i, limb * 512 / S2 + kh)
                         } else {
@@ -1681,11 +1685,11 @@ impl LayerCheck<'_> {
                 for kh in 0..F_WIDTH / S2 {
                     let weight = e[(layer * (F_WIDTH / S2) + kh) as usize];
                     a.add(&self.long_a(offset, ts, layer, kh), weight);
-                    #[cfg(feature = "std")]
-                    if std::env::var_os("DUMP_SHARED").is_some() && layer == 0 && kh < 3 {
-                        eprintln!("RUST_LONG_A layer={} kh={} last={:016x}", layer, kh, a.e.last().map_or(0, |entry| entry.idx));
-                    }
                     b.add(&self.long_a(offset, tu, layer, kh), weight);
+                    #[cfg(feature = "std")]
+                    if std::env::var_os("DUMP_SHARED").is_some() && layer == 0 && kh < 6 {
+                        eprintln!("RUST_LONG_A layer={} kh={} a_last={:016x} b_last={:016x}", layer, kh, a.e.last().map_or(0, |entry| entry.idx), b.e.last().map_or(0, |entry| entry.idx));
+                    }
                 }
             }
             f.lin(a);
@@ -1704,6 +1708,10 @@ impl LayerCheck<'_> {
                     let weight = e[(lm * (FE / S2) + kh) as usize];
                     a.add(&self.long_a(offset, ts, 2 * lm + 1, FE / S2 + kh), weight);
                     b.add(&self.long_a(offset, tu, 2 * lm + 1, FE / S2 + kh), weight);
+                    #[cfg(feature = "std")]
+                    if std::env::var_os("DUMP_SHARED").is_some() && lm == 0 && kh < 6 {
+                        eprintln!("RUST_LONG_A2 lm={} kh={} a_last={:016x} b_last={:016x}", lm, kh, a.e.last().map_or(0, |entry| entry.idx), b.e.last().map_or(0, |entry| entry.idx));
+                    }
                 }
             }
             f.lin(a);
@@ -1719,16 +1727,30 @@ impl LayerCheck<'_> {
         {
             let t_b = [self.run.tables.at("b-bits-0").unwrap(), self.run.tables.at("b-bits-1").unwrap()];
             let t_p = self.run.tables.at("b-pin").unwrap();
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_SHARED").is_some() {
+                eprintln!("RUST_PLANE_TABLES b0={} b1={} p={}", t_b[0], t_b[1], t_p);
+            }
             let w = 16 + 5 - 13;
             let mut at = [Aff::default(), Aff::default()];
             for e in 0..2 {
-                let ec = eq_top(&self.run.forest.zb[e][16..]);
+                let ec = eq_top(&self.run.forest.zb[e][16..16 + self.run.forest.c_k as usize]);
                 let et = eq_top(&self.run.forest.zb[e][..w]);
+                #[cfg(feature = "std")]
+                if std::env::var_os("DUMP_SHARED").is_some() {
+                    for i in 0..8 {
+                        eprintln!("RUST_PLANE_LOW e={} i={} z={:016x}", e, i, self.run.forest.zb[e][i].0[0]);
+                    }
+                }
                 for c in 0..self.run.forest.calls.len() {
                     for th in 0..1usize << w {
                         at[e].add(&self.u3at(t_b[e], ((c << w) + th) as u64), ec[c] * et[th]);
                     }
                 }
+            }
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_SHARED").is_some() {
+                eprintln!("RUST_PLANE_AT1 first={:016x}", at[1].e.first().map_or(E::ZERO, |entry| entry.coef).0[0]);
             }
             let padding = self.run.forest.empty_keys() + self.run.forest.pub_counts.iter().sum::<u64>();
             let mut pin = Aff::constant(-E::from_base(F((1u64 << self.run.forest.v()) - padding)));
