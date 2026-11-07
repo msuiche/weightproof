@@ -10,7 +10,7 @@ use crate::fp::{
 };
 
 fn eq_top(point: &[E]) -> Vec<E> {
-    eq_table(&point.iter().rev().copied().collect::<Vec<_>>())
+    crate::fp::tensor::eq_table_rev(point)
 }
 
 #[derive(Debug, Clone)]
@@ -415,7 +415,7 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
         if let Some(tau) = &call.tau {
             let eq = eq_top(u);
             for (i, &value) in tau.iter().enumerate() {
-                table += pow2_scale(E::from_base(F(value)), 0) * eq[i];
+                table += E::from_base(F(value)) * eq[i];
             }
         } else {
             for (i, &coordinate) in u.iter().enumerate() {
@@ -426,11 +426,25 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
     }
     let ec = eq_top(&zb0[k_t as usize..]);
     let mut row = E::ZERO;
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        for c in 0..input.calls.len() {
+            eprintln!("RUST_FOREST_TABLE c={} tT={:016x}", c, t_t[c].0[0]);
+        }
+    }
     for c in 0..1usize << c_k {
         let of = c.min(nc - 1);
         row += ec[c] * (t_t[of] + scale_index(theta, of as u64));
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() {
+            eprintln!("RUST_FOREST_TERM c={} ec={:016x} tT={:016x} theta={:016x}", c, ec[c].0[0], t_t[of].0[0], scale_index(theta, of as u64).0[0]);
+        }
     }
     let leaves_a = alpha - E::ONE - row;
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_FOREST_ROW row={:016x} leaves_a={:016x}", row.0[0], leaves_a.0[0]);
+    }
     Ok(Forest {
         calls: input.calls,
         d_t,

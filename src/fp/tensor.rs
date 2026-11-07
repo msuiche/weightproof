@@ -490,6 +490,21 @@ pub fn block_rows(low: &[E], token: &[E]) -> Vec<E> {
     out
 }
 
+pub fn eq_table_rev(point: &[E]) -> Vec<E> {
+    let mut out = vec![E::ONE];
+    for &x in point.iter().rev() {
+        let old_len = out.len();
+        out.reserve(old_len);
+        for i in 0..old_len {
+            let low = out[i] * (E::ONE - x);
+            let high = out[i] * x;
+            out[i] = low;
+            out.push(high);
+        }
+    }
+    out
+}
+
 pub fn eq_table(point: &[E]) -> Vec<E> {
     let mut out = vec![E::ONE];
     for &x in point {

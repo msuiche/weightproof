@@ -33,7 +33,7 @@ const BIGH: u64 = 1 << 37;
 const LEDG: [(u64, u64); 6] = [(0, 5), (5, 1), (6, 5), (11, 5), (16, 2), (18, EXC)];
 
 fn eq_top(point: &[E]) -> Vec<E> {
-    eq_table(&point.iter().rev().copied().collect::<Vec<_>>())
+    crate::fp::tensor::eq_table_rev(point)
 }
 const LED_NR: u64 = 99;
 

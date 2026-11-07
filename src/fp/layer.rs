@@ -18,7 +18,7 @@ pub struct Seg {
 }
 
 fn eq_top(point: &[E]) -> Vec<E> {
-    crate::fp::tensor::eq_table(&point.iter().rev().copied().collect::<Vec<_>>())
+    crate::fp::tensor::eq_table_rev(point)
 }
 
 #[derive(Debug, Clone)]

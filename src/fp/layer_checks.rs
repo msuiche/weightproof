@@ -27,7 +27,7 @@ const LFE: u32 = 9;
 const LPF: u32 = 10;
 
 fn eq_top(point: &[E]) -> Vec<E> {
-    eq_table(&point.iter().rev().copied().collect::<Vec<_>>())
+    crate::fp::tensor::eq_table_rev(point)
 }
 
 fn kl_words() -> Vec<u32> {
@@ -1750,7 +1750,11 @@ impl LayerCheck<'_> {
             }
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() {
-                eprintln!("RUST_PLANE_AT1 first={:016x}", at[1].e.first().map_or(E::ZERO, |entry| entry.coef).0[0]);
+                for e in 0..2 {
+                    for i in 10..16 {
+                        eprintln!("RUST_PLANE_MID e={} i={} z={:016x}", e, i, self.run.forest.zb[e][i].0[0]);
+                    }
+                }
             }
             let padding = self.run.forest.empty_keys() + self.run.forest.pub_counts.iter().sum::<u64>();
             let mut pin = Aff::constant(-E::from_base(F((1u64 << self.run.forest.v()) - padding)));

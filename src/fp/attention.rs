@@ -12,7 +12,7 @@ use crate::fp::{
     forest::{self, Forest},
     layer::HFun,
     model::{psc_begin, psc_ends, psc_row, round_in, Aff, HFork, Psc, RoundForm, RoundName, Tr},
-    tensor::eq_table,
+    tensor::{eq_table, eq_table_rev},
 };
 
 pub const RM: usize = 0;
@@ -76,7 +76,7 @@ fn cover(n_t: u64, p: u64, sg: u64) -> (u64, u64) {
 }
 
 fn eq_top(point: &[E]) -> Vec<E> {
-    eq_table(&point.iter().rev().copied().collect::<Vec<_>>())
+    eq_table_rev(point)
 }
 
 #[derive(Debug, Clone)]
