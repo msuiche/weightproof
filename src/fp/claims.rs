@@ -315,6 +315,10 @@ impl Statement {
         for &oracle in &group.members {
             rows.extend(self.oracles[oracle as usize].sample_rows.clone());
         }
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() {
+            eprintln!("RUST_BEGIN_RUN plain={} with_samples={} members={:?}", group.rows.iter().filter(|row| row.kind == RowKind::Plain).count(), rows.len(), group.members);
+        }
         rows.extend(
             group
                 .rows
@@ -419,6 +423,12 @@ fn add_to_group_row(
     }
     for main in &row.forms {
         let i = member(main.oracle);
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() {
+            let vars = main.form.tensors.iter().map(|tensor| tensor.vars()).max().unwrap_or(0);
+            let point = vec![E::ONE + E::ONE; vars as usize];
+            eprintln!("RUST_ROW_FORM oracle={} hash={:016x}", main.oracle, main.form.mle(&point).0[0]);
+        }
         if layout.kept[i] {
             kept_form(out, main.oracle).add_scaled(&main.form, scale);
             continue;
@@ -444,13 +454,21 @@ pub fn bat_combine(
         target: E::ZERO,
     };
     let mut power = E::ONE;
-    for row in rows {
+    for (row_index, row) in rows.iter().enumerate() {
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() {
+            eprintln!("RUST_BAT_ROW index={} target={:016x}", row_index, row.target.0[0]);
+        }
         add_to_group_row(statement, layout, row, power, &mut out);
         power *= challenge;
     }
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {
-        eprintln!("RUST_SHARED_BAT target={:016x} d0={:016x} d1={:016x} d2={:016x} d3={:016x}", out.target.0[0], out.d.get(0).map_or(E::ZERO, |x| *x).0[0], out.d.get(1).map_or(E::ZERO, |x| *x).0[0], out.d.get(2).map_or(E::ZERO, |x| *x).0[0], out.d.get(3).map_or(E::ZERO, |x| *x).0[0]);
+        eprintln!("RUST_SHARED_BAT theta={:016x} target={:016x} d0={:016x} d1={:016x} d2={:016x} d3={:016x}", challenge.0[0], out.target.0[0], out.d.get(0).map_or(E::ZERO, |x| *x).0[0], out.d.get(1).map_or(E::ZERO, |x| *x).0[0], out.d.get(2).map_or(E::ZERO, |x| *x).0[0], out.d.get(3).map_or(E::ZERO, |x| *x).0[0]);
+        let vars = out.c.tensors.iter().map(|tensor| tensor.vars()).max().unwrap_or(0);
+        let point = vec![E::ONE + E::ONE; vars as usize];
+        let hash = out.c.mle(&point).0[0];
+        eprintln!("RUST_BAT_COEF hash={:016x}", hash);
     }
     out
 }
@@ -590,6 +608,12 @@ pub fn send_form(statement: &Statement, oracle: OracleId, z: &[E], beta: E, answ
     }
     if has_mask {
         row.add(oracle, Part::Mask, on_mask);
+    }
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() && oracle == 5 {
+        let vars = row.forms.iter().flat_map(|main| main.form.tensors.iter().map(|tensor| tensor.vars())).max().unwrap_or(0);
+        let point = vec![E::ONE + E::ONE; vars as usize];
+        eprintln!("RUST_SAMPLE_FORM oracle={} hash={:016x}", oracle, row.forms[0].form.mle(&point).0[0]);
     }
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() && has_mask && !has_main {

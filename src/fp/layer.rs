@@ -17,6 +17,10 @@ pub struct Seg {
     pub pos: Vec<u64>,
 }
 
+fn eq_top(point: &[E]) -> Vec<E> {
+    crate::fp::tensor::eq_table(&point.iter().rev().copied().collect::<Vec<_>>())
+}
+
 #[derive(Debug, Clone)]
 pub struct CallD {
     pub name: String,
@@ -29,6 +33,10 @@ pub struct CallD {
 
 impl CallD {
     pub fn new(name: &str, kind: &str, segs: Vec<Seg>) -> Self {
+        Self::new_with_floor(name, kind, segs, 12)
+    }
+
+    pub fn new_with_floor(name: &str, kind: &str, segs: Vec<Seg>, floor_lg: u32) -> Self {
         let mut out = Self {
             name: name.into(),
             kind: kind.into(),
@@ -37,7 +45,7 @@ impl CallD {
             l_j: 0,
             used: vec![],
         };
-        out.place(12);
+        out.place(floor_lg);
         out
     }
 
@@ -117,6 +125,7 @@ pub struct TMat {
 #[derive(Debug, Clone)]
 pub struct LayerFixture {
     pub first: bool,
+    pub eps: [u64; 2],
     pub ns: u32,
     pub ncl: u32,
     pub nlin: u32,
@@ -265,6 +274,7 @@ pub(crate) fn accepted_layer(first: bool) -> LayerFixture {
     };
     LayerFixture {
         first,
+        eps: [1, 1],
         ns: if first { 3204 } else { 3203 },
         ncl: if first { 33 } else { 32 },
         nlin: if first { 1549 } else { 1516 },
@@ -519,6 +529,7 @@ pub struct LayerRun {
     pub kt: Aff,
     pub tkh: Vec<E>,
     pub points: BTreeMap<String, Vec<E>>,
+    pub tokv: Vec<u32>,
     pub s_sc: u32,
     pub s_sel: u32,
 }
@@ -566,7 +577,7 @@ pub fn through_terms(
     let gp = tr.batch(N_SL as usize)?;
     let rho_i = tr.point(crate::fp::model::RoundName::Join, 3)?;
     let half = E::from_base(crate::fp::field::FieldElement(2)).inverse();
-    let eq_i = crate::fp::tensor::eq_table(&rho_i);
+    let eq_i = eq_top(&rho_i);
     let mut start = Aff::default();
     let mut scale = E::ONE;
     for _ in 0..L_PD {
@@ -631,6 +642,7 @@ pub fn through_terms(
         kt,
         tkh,
         points,
+        tokv: vec![],
         s_sc,
         s_sel,
     })
@@ -647,14 +659,14 @@ pub fn assign_later_phi(run: &mut LayerRun) -> Result<(), FpError> {
         }
         if x.long {
             let weights = crate::fp::tensor::block_rows(
-                &crate::fp::tensor::eq_table(&point[..2]),
-                &crate::fp::tensor::eq_table(&point[2..]),
+                &eq_top(&point[..2]),
+                &eq_top(&point[2..]),
             );
             for j in 0..x.count {
                 run.tables.fun[x.first + j].phi = weights.clone();
             }
         } else {
-            let weights = crate::fp::tensor::eq_table(&point);
+            let weights = eq_top(&point);
             for j in 0..x.count {
                 run.tables.fun[x.first + j].phi = weights.clone();
             }

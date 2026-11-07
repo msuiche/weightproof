@@ -92,6 +92,13 @@ impl Tensor {
         self.first = first;
     }
 
+    pub fn set_dense_map(&mut self, dense: &[(u32, u32)]) {
+        self.dense_vars = vec![0; dense.len()];
+        for &(bit, variable) in dense {
+            self.dense_vars[bit as usize] = variable;
+        }
+    }
+
     fn dense_index(&self, index: u64) -> usize {
         self.dense_vars
             .iter()

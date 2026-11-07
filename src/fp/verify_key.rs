@@ -305,11 +305,13 @@ pub(crate) fn run_iopp_stages(
     run: &Digest,
     context: &str,
     bytes: &[u8],
-    work_bits: u32,
+    setting: &crate::fp::analysis::Setting,
+    scope: crate::fp::analysis::Scope,
     shared_split: Option<u32>,
     initial_fresh: Option<u32>,
     mask_ahead: bool,
-) -> Result<(), FpError> {
+) -> Result<crate::fp::claims::GroupRow, FpError> {
+    let work_bits = setting.query_work(scope);
     for index in start..end {
         let stage = &stages[index];
         let stage_context = if index + 1 == end {
@@ -377,7 +379,15 @@ pub(crate) fn run_iopp_stages(
             if !chain.close_with_work(ChainKind::Positions, &words(answers), work_bits, nonce) {
                 return Err(FpError::Range { context: "proof-of-work-cs" });
             }
-            let positions: Vec<u64> = (0..stage.t)
+            let symbols = stage.g.slots + u64::from(stage.g.has_mask()) * 2;
+            let position_count = crate::fp::plan::cs_positions(
+                setting,
+                scope,
+                stage,
+                &stages[index + 1],
+                symbols,
+            )?;
+            let positions: Vec<u64> = (0..position_count)
                 .map(|_| chain.draw_position(stage.g.main.log_n))
                 .collect();
             #[cfg(feature = "std")]
@@ -482,7 +492,8 @@ pub(crate) fn run_iopp_stages(
                     context: "proof-of-work-base",
                 });
             }
-            let positions: Vec<u64> = (0..stage.t)
+            let position_count = crate::fp::plan::base_positions(setting, scope, stage)?;
+            let positions: Vec<u64> = (0..position_count)
                 .map(|_| chain.draw_position(stage.g.main.log_n))
                 .collect();
             let opening_start = cursor.opened.len();
@@ -533,7 +544,7 @@ pub(crate) fn run_iopp_stages(
             iopp.base(
                 stages,
                 end - 1,
-                row,
+                row.clone(),
                 target_star,
                 lambda,
                 &clear_values,
@@ -543,7 +554,7 @@ pub(crate) fn run_iopp_stages(
             break;
         }
     }
-    Ok(())
+    Ok(row)
 }
 
 fn read_sample_after_root(
@@ -556,7 +567,7 @@ fn read_sample_after_root(
     Ok(read_samples_after_root(cursor, chain, statement, &[oracle], context)?[0])
 }
 
-fn read_sample(
+pub(crate) fn read_sample(
     cursor: &mut Cursor,
     chain: &mut Chain,
     statement: &mut Statement,
@@ -945,7 +956,8 @@ pub fn verify_key_transcript(
         &shared_run,
         "folded row",
         bytes,
-        32,
+        &input.setting,
+        crate::fp::analysis::Scope::Commit,
         shared.shared.split,
         shared.shared.mask,
         true,
@@ -964,7 +976,8 @@ pub fn verify_key_transcript(
         &shared_run,
         "Omega",
         bytes,
-        32,
+        &input.setting,
+        crate::fp::analysis::Scope::Commit,
         shared.shared.split,
         shared.shared.mask,
         false,

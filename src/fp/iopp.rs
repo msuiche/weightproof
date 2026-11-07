@@ -84,7 +84,7 @@ impl Iopp {
     ) -> Result<GroupRow, FpError> {
         self.fold_cs_inner(
             stages, samples, stage, row, hiding, epsilon, polynomials, challenges, z, beta,
-            answer, positions, theta, opened, anew, None, target, masks_ride, true,
+            answer, positions, theta, opened, anew, None, target, masks_ride, true, self.group,
         )
         .map(|(row, _)| row.unwrap())
     }
@@ -109,10 +109,11 @@ impl Iopp {
         anew: &[u32],
         oracle: u32,
         target: SwitchTarget,
+        to_group: crate::fp::claims::GroupId,
     ) -> Result<(Option<GroupRow>, crate::fp::proximity::SingleRows), FpError> {
         self.fold_cs_inner(
             stages, samples, stage, row, hiding, epsilon, polynomials, challenges, z, beta,
-            answer, positions, theta, opened, anew, Some(oracle), target, false, false,
+            answer, positions, theta, opened, anew, Some(oracle), target, false, false, to_group,
         )
     }
 
@@ -138,6 +139,7 @@ impl Iopp {
         mut target: SwitchTarget,
         masks_ride: bool,
         batch: bool,
+        to_group: crate::fp::claims::GroupId,
     ) -> Result<(Option<GroupRow>, crate::fp::proximity::SingleRows), FpError> {
         let next = stages[stage + 1];
         let mut claim = hiding + epsilon * row.target;
@@ -198,7 +200,12 @@ impl Iopp {
                 .statement
                 .new_group(target.shape.code, target.shape.mask_code);
         }
-        self.statement.join(self.group, oracle);
+        if pre_sent.is_some() {
+            self.group = to_group;
+        }
+        if pre_sent.is_none() {
+            self.statement.join(self.group, oracle);
+        }
         if pre_sent.is_none() {
             let mut sample = send_form(&self.statement, oracle, z, beta, 0);
             sample.target = answer;

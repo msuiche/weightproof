@@ -210,6 +210,7 @@ pub fn plan_proof(input: &ProofLayoutInput) -> Result<FilePlan, FpError> {
     }
     let last_tree = TreeSize {
         number: next_tree,
+        root_context: Some("last group".into()),
         ..input.last_tree.clone()
     };
     plan_iopp(

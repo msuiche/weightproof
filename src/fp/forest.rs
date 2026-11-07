@@ -9,6 +9,10 @@ use crate::fp::{
     tensor::eq_table,
 };
 
+fn eq_top(point: &[E]) -> Vec<E> {
+    eq_table(&point.iter().rev().copied().collect::<Vec<_>>())
+}
+
 #[derive(Debug, Clone)]
 pub struct Call {
     pub name: String,
@@ -81,14 +85,18 @@ impl Forest {
         self.k_t + self.c_k
     }
     pub fn padding_key(&self, call: usize) -> E {
-        self.calls[call].tau_at(self.calls[call].t0) + scalar(self.theta, call as u64)
+        self.calls[call].tau_at(self.calls[call].t0) + scale_index(self.theta, call as u64)
     }
     pub fn empty_keys(&self) -> u64 {
         ((1u64 << self.r_k) - self.nt as u64) << self.d_t
     }
 }
 
-fn scalar(value: E, shift: u64) -> E {
+fn scale_index(value: E, index: u64) -> E {
+    value * E::from_base(F(index))
+}
+
+fn pow2_scale(mut value: E, shift: u64) -> E {
     let mut out = value;
     for _ in 0..shift {
         out += out;
@@ -126,6 +134,7 @@ fn order_forest_range(mu: u32, r_k: u32) -> Vec<u32> {
     out
 }
 
+#[derive(Debug, Clone)]
 pub struct ProductLevel {
     pub r: Vec<E>,
     pub s_l: u32,
@@ -151,13 +160,30 @@ pub fn read_product_level(
     }
     let s_l = psc_ends(f, tr, slot, &mut p, 2, 2)?;
     let s_r = s_l + 1;
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_PL slot={} nclaim={} psc_first={} eps={:016x} target={:016x} claim={:016x} start={:016x}", slot, f.n_claim, p.first, p.eps.0[0], p.target.0[0], p.claim.0[0], p.start.c.0[0]);
+    }
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        let target_before = f.public_part(&start.clone())?;
+        eprintln!("RUST_PL_START slot={} public={:016x} slots={:?}", slot, target_before.0[0], start.s);
+    }
     let tau = tr.answer(RoundName::Line)?;
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_PL_END slot={} s_l={} s_r={} l={:016x} r={:016x} tau={:016x}", slot, s_l, s_r, f.shown(s_l)?.0[0], f.shown(s_r)?.0[0], tau.0[0]);
+    }
     let row = psc_row(
         f,
         &mut p,
         f.shown(s_l)? * f.shown(s_r)?,
         &Aff::default(),
     )?;
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() && (mu == 25 || mu == 18) {
+        eprintln!("RUST_LEVEL first={} mu={} start={:?}", p.first, mu, p.start.s.iter().map(|x| (x.0, x.1.0[0])).collect::<Vec<_>>());
+    }
     Ok(ProductLevel { r, s_l, s_r, tau, row })
 }
 
@@ -240,12 +266,20 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
     let alpha = tr.answer(RoundName::Lkp)?;
     let pad_key = |index: usize, theta: E| {
         let call = &input.calls[index];
-        call.tau_at(call.t0) + scalar(theta, index as u64)
+        call.tau_at(call.t0) + scale_index(theta, index as u64)
     };
     let empty_keys = ((1u64 << r_k) - nt as u64) << d_t;
     let mut a = pow(alpha - pad_key(0, theta), empty_keys);
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_FOREST_INIT empty={} nt={} call0={} pub0={} key0={:016x} a0={:016x} theta={:016x}", empty_keys, nt, call_of.first().copied().unwrap_or(0), input.pub_counts.first().copied().unwrap_or(0), pad_key(0, theta).0[0], a.0[0], theta.0[0]);
+    }
     for y in 0..nt as usize {
         a *= pow(alpha - pad_key(call_of[y] as usize, theta), input.pub_counts[y]);
+    }
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_FOREST_A a={:016x} alpha={:016x}", a.0[0], alpha.0[0]);
     }
     let slot0 = *slot;
     let mut rows = Vec::new();
@@ -268,14 +302,27 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
             power
         };
         rows.push(psc_row(f, &mut p, s0, &Aff::default())?);
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() && j == 0 {
+            eprintln!("RUST_FOREST_TIE0 sz={:016x} power={:016x} s0={:016x} row={:016x}", f.shown(s_z)?.0[0], power.0[0], s0.0[0], rows.last().unwrap().c.0[0]);
+        }
     }
     s_g[31] = s_p;
     let by_variable = tr.point(RoundName::LkpPlanes, 5)?;
     let mut rho_t: Vec<E> = by_variable.into_iter().rev().collect();
-    let eq = eq_table(&rho_t);
+    let eq = eq_top(&rho_t);
     let mut ct = Aff::default();
     for j in 0..32 {
         ct.add(&Aff::slot(s_g[j]), eq[j]);
+    }
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_RHO_T {:?}", rho_t);
+        eprintln!("RUST_CT_EQ {:?}", eq);
+    }
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_SG 0={} val={:016x} 1={} val={:016x} 2={} val={:016x} 3={} val={:016x}", s_g[0], f.shown(s_g[0])?.0[0], s_g[1], f.shown(s_g[1])?.0[0], s_g[2], f.shown(s_g[2])?.0[0], s_g[3], f.shown(s_g[3])?.0[0]);
     }
     let mut rho = Vec::new();
     let mut start = Aff::slot(s_z);
@@ -366,22 +413,22 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
         let u = &zb0[start..start + call.k as usize];
         let mut table = E::ZERO;
         if let Some(tau) = &call.tau {
-            let eq = eq_table(u);
+            let eq = eq_top(u);
             for (i, &value) in tau.iter().enumerate() {
-                table += scalar(E::from_base(F(value)), 0) * eq[i];
+                table += pow2_scale(E::from_base(F(value)), 0) * eq[i];
             }
         } else {
             for (i, &coordinate) in u.iter().enumerate() {
-                table += scalar(coordinate, (call.k as usize - 1 - i) as u64);
+                table += pow2_scale(coordinate, (call.k as usize - 1 - i) as u64);
             }
         }
         t_t[c] = table;
     }
-    let ec = eq_table(&zb0[k_t as usize..]);
+    let ec = eq_top(&zb0[k_t as usize..]);
     let mut row = E::ZERO;
     for c in 0..1usize << c_k {
         let of = c.min(nc - 1);
-        row += ec[c] * (t_t[of] + scalar(theta, of as u64));
+        row += ec[c] * (t_t[of] + scale_index(theta, of as u64));
     }
     let leaves_a = alpha - E::ONE - row;
     Ok(Forest {
@@ -414,7 +461,7 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
 pub fn forest_phi_b(forest: &Forest, lm: u32, e: usize) -> Vec<E> {
     let mut point = forest.zb[e][(forest.k_t + 5 - lm) as usize..forest.k_t as usize].to_vec();
     point.extend_from_slice(&forest.zb[e][(forest.k_t + forest.c_k) as usize..]);
-    eq_table(&point)
+    eq_top(&point)
 }
 
 pub fn forest_phi_p(lm: u32) -> Vec<E> {

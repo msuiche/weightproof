@@ -139,12 +139,14 @@ pub fn laid_tensor(
     }
     let mut tensor = Tensor::eq(&[], scalar);
     let low_bits = if block.i_is_low { block.bits_i } else { block.bits_c };
+    let mut dense = Vec::new();
     let mut push_bit = |tensor: &mut Tensor, x_bit: u32| -> Result<(), FpError> {
         let of_i = (x_bit < low_bits) == block.i_is_low;
         let bit = if x_bit < low_bits { x_bit } else { x_bit - low_bits };
         let weights = if of_i { on_i } else { on_c };
         if weights.written_out() {
-            tensor.push_dense(1);
+            dense.push((bit, tensor.vars()));
+            tensor.push(E::ONE, E::ONE);
         } else {
             if bit as usize >= weights.lo.len() || bit as usize >= weights.hi.len() {
                 return Err(FpError::Range { context: "laid-weights" });
@@ -189,7 +191,10 @@ pub fn laid_tensor(
     } else {
         on_c.values.as_ref().map(|values| (values, block.first_c))
     } {
-        if tensor.has_dense() {
+        if !dense.is_empty() {
+            tensor.set_dense_map(&dense);
+            tensor.set_values(values.clone(), first);
+        } else if tensor.has_dense() {
             tensor.set_values(values.clone(), first);
         } else {
             tensor.scalar *= *values.get(first as usize).ok_or(FpError::Range {

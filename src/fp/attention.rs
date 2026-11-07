@@ -75,6 +75,10 @@ fn cover(n_t: u64, p: u64, sg: u64) -> (u64, u64) {
     if sg < p { (p, sg) } else { (n_t - 1 - p, sg - p) }
 }
 
+fn eq_top(point: &[E]) -> Vec<E> {
+    eq_table(&point.iter().rev().copied().collect::<Vec<_>>())
+}
+
 #[derive(Debug, Clone)]
 pub struct Piece { pub seg: usize, pub lam: u64, pub a: u64, pub b: u32, pub off: u64, pub weighed: bool }
 #[derive(Debug, Clone)]
@@ -169,6 +173,10 @@ fn sc3_row(f: &mut HFork, sc: &mut Sc3, weights: &[E]) -> Result<(), FpError> {
     let mut s0 = E::ZERO;
     for b in 0..sc.nb { s0 += weights[b] * f.shown(sc.s_end + (2 * b) as u32)? * f.shown(sc.s_end + (2 * b + 1) as u32)?; }
     sc.row_u = psc_row(f, &mut sc.p, s0, &Aff::default())?;
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_SC3 first={} s0={:016x} row={:016x}", sc.p.first, s0.0[0], sc.row_u.c.0[0]);
+    }
     Ok(())
 }
 fn scd_in(f: &mut HFork, tr: &mut Tr, slot: &mut u32, degrees: &[u32], degree_y: u32, ends: u32, start: Aff) -> Result<Scd, FpError> {
@@ -296,9 +304,9 @@ pub fn read_messages(
     let zihi = &zi_w[..shape.lnt as usize];
     let zilo = &zi_w[shape.lnt as usize..];
     let mut wjv = vec![E::ZERO; shape.nt as usize];
-    let ep = eq_table(&vpm.r[shape.lgk as usize..shape.lgk as usize + shape.lnt as usize - 1]);
-    let esg = eq_table(&vpm.r[shape.lgk as usize + shape.lnt as usize - 1..shape.lgk as usize + 2 * shape.lnt as usize - 1]);
-    let eih = eq_table(zihi);
+    let ep = eq_top(&vpm.r[shape.lgk as usize..shape.lgk as usize + shape.lnt as usize - 1]);
+    let esg = eq_top(&vpm.r[shape.lgk as usize + shape.lnt as usize - 1..shape.lgk as usize + 2 * shape.lnt as usize - 1]);
+    let eih = eq_top(zihi);
     let mut factor = E::ZERO;
     for p in 0..shape.hp { for sg in 0..shape.nt - 1 {
         let (i, j) = cover(shape.nt, p, sg);
@@ -306,7 +314,15 @@ pub fn read_messages(
         wjv[j as usize] += ep[p as usize] * esg[sg as usize];
     }}
     let w_vm = times_w(&pw_w, factor * eq_pts(zg_w, &vpm.r[..shape.lgk as usize]));
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_VPM_FACTOR f={:016x} eq={:016x}", factor.0[0], eq_pts(zg_w, &vpm.r[..shape.lgk as usize]).0[0]);
+    }
     sc3_row(f, &mut vpm, &w_vm)?;
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_VPM claim={:016x} eps={:016x} target={:016x} row={:016x}", vpm.p.claim.0[0], vpm.p.eps.0[0], vpm.p.target.0[0], vpm.row_u.c.0[0]);
+    }
     let mut vpd = sc3_in(f, tr, slot, shape.nv_vd(), shape.np(), Aff::slot(s_cl + 1))?;
     let w_vd = times_w(&pw_w, eq_pts(zg_w, &vpd.r[..shape.lgk as usize]) * eq_pts(zihi, &vpd.r[shape.lgk as usize..shape.lgk as usize + shape.lnt as usize]));
     sc3_row(f, &mut vpd, &w_vd)?;
@@ -862,7 +878,11 @@ impl AttentionRun {
         vt.push(E::ONE);
         for i in 1..128 { vt.push(vt[i - 1] * f.theta); }
         let vp = vt.clone();
-        let step = self.lead(f, 128);
+        let step = f.theta.pow(128);
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() {
+            eprintln!("RUST_ATT_STEP step={:016x}", step.0[0]);
+        }
         self.vt = vt.clone(); self.vp = vp.clone();
         let matrices = self.matrices();
         let mut eq_first = vec![0u64];
@@ -900,6 +920,10 @@ impl AttentionRun {
             let wr = crate::fp::smallness::tie_right(&shape, &lo_x[mu], &gam_x[mu]);
             let lead = self.lead(f, eq_first[mu]);
             let sw = wl.iter().fold(E::ZERO, |a, &b| a + b);
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_SHARED").is_some() {
+                eprintln!("RUST_ATT_TIE mu={} m={} ms={} lead={:016x} sx={:016x} sw={:016x} wl0={:016x} wr0={:016x} target={:016x}", mu, m, shape.ms, lead.0[0], sx.0[0], sw.0[0], wl[0].0[0], wr[0].0[0], (-lead * shift(sx * sw, 17)).0[0]);
+            }
             self.t2lin(f, Aff::constant(-lead * shift(sx * sw, 17)), &[
                 Run2 { tree: self.zz_tree(), row: 3, first: self.off(mu), coef: lead, weights: wl.clone(), w0: 0, count: m },
                 Run2 { tree: self.zz_tree(), row: 3, first: mz + self.off(mu), coef: shift(lead, 10), weights: wl.clone(), w0: 0, count: m },
@@ -995,8 +1019,9 @@ impl AttentionRun {
     }
     pub fn door_h(&self, link: usize, f: &HFork) -> Result<crate::fp::req_rows::ReqEquation, FpError> {
         if f.n_claim != f.plan_claims { return Err(FpError::Range { context: "request-claim-count" }); }
+        let (on_masks, constant) = f.settle()?;
         let array_of = self.array_of(link);
-        let mut equation = crate::fp::req_rows::ReqEquation { terms: vec![], on_masks: f.ls.clone(), target: -f.c0 };
+        let mut equation = crate::fp::req_rows::ReqEquation { terms: vec![], on_masks, target: -constant };
         for (ti, tree) in f.trees.iter().enumerate() {
             let (born, array) = &array_of[ti];
             for row in &tree.rows {

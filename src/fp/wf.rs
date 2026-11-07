@@ -191,7 +191,7 @@ pub struct TensorRow {
     pub target: E,
 }
 
-fn wf_weights_on_rows(
+pub fn wf_weights_on_rows(
     k_row: u32,
     first_row: u64,
     values: &[E],

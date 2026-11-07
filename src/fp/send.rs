@@ -82,7 +82,7 @@ pub(crate) fn read_samples_after_root(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct OracleLocation {
+pub(crate) struct OracleLocation {
     tree: u32,
     main_at: usize,
     mask_at: usize,
@@ -305,5 +305,13 @@ impl OracleBook {
             .iter()
             .find(|tree| tree.number == location.tree)
             .map(|tree| tree.log_n)
+    }
+
+    pub fn location(&self, oracle: u32) -> Option<OracleLocation> {
+        self.locations.get(&oracle).copied()
+    }
+
+    pub fn adopt(&mut self, oracle: u32, location: OracleLocation) {
+        self.locations.insert(oracle, location);
     }
 }

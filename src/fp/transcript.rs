@@ -139,6 +139,12 @@ impl<'a> Cursor<'a> {
             if field.message.position_dependent
                 || !matches!(field.message.kind, MessageKind::Scalars)
             {
+                #[cfg(feature = "std")]
+                eprintln!(
+                    "RUST_SCALAR_STREAM_BAD index={} name={} context={} kind={:?}\n{:?}",
+                    self.index, field.message.name, field.message.context, field.message.kind,
+                    std::backtrace::Backtrace::capture()
+                );
                 return Err(FpError::Range {
                     context: "transcript-scalar-stream",
                 });

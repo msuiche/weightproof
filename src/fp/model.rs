@@ -136,11 +136,15 @@ impl<'a, 'b> Tr<'a, 'b> {
         // C++ BitsDraw packs 32 trits per word, two bits per entry.
         for start in (0..total).step_by(32) {
             let mut word = self.chain.next_word();
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_SHARED").is_some() && start == 0 {
+                eprintln!("RUST_TRIT_WORD first={:016x} total={}", word, total);
+            }
             for j in 0..32 {
                 if start + j >= total {
                     break;
                 }
-                out.push(((word & 1) as i8 - ((word << 1) & 2) as i8));
+                out.push((word & 1) as i8 - (word & (word << 1) & 2) as i8);
                 word >>= 2;
             }
         }
@@ -381,8 +385,30 @@ impl HFork {
         }
         for &(slot, coeff) in &form.s {
             self.ls[slot as usize] += weight * coeff;
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_SHARED").is_some() && slot == 1591 {
+                eprintln!("RUST_SLOT1591_WRITE weight={:016x} coeff={:016x} nclaim={}", weight.0[0], coeff.0[0], self.n_claim);
+            }
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_SHARED").is_some() && slot == 12 {
+                eprintln!("RUST_SLOT12_WRITE weight={:016x} coeff={:016x} nclaim={}", weight.0[0], coeff.0[0], self.n_claim);
+            }
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_SHARED").is_some() && slot == 78 {
+                eprintln!("RUST_SLOT78_WRITE weight={:016x} coeff={:016x} nclaim={}", weight.0[0], coeff.0[0], self.n_claim);
+            }
         }
         self.c0 += weight * form.c;
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() && self.n_claim == 76 {
+            for &(slot, coeff) in &form.s {
+                eprintln!("RUST_CLAIM76_SLOT {} {:016x}", slot, coeff.0[0]);
+            }
+        }
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() && self.n_claim <= 1600 {
+            eprintln!("RUST_PUSH_CLAIM index={} weight={:016x} constant={:016x} total={:016x} sh={:016x}", self.n_claim, weight.0[0], form.c.0[0], self.c0.0[0], form.s.iter().fold(0u64, |a, &(slot, coeff)| a ^ coeff.0[0] ^ slot as u64));
+        }
     }
 
     pub fn kap_at(&self, claim: u32) -> E {
@@ -404,6 +430,36 @@ impl HFork {
         self.n_claim += 1;
         self.kap_at(claim)
     }
+
+    /// C++ HFork::settle: move shown slot values into the equation's constant
+    /// and retain only the still-hidden mask factors.
+    pub fn settle(&self) -> Result<(Vec<E>, E), FpError> {
+        let mut mask_coefficients = vec![E::ZERO; self.ns as usize];
+        let mut constant = self.c0;
+        let mut debug_sum = E::ZERO;
+        for j in 0..self.ns as usize {
+            if self.ls[j].is_zero() {
+                continue;
+            }
+            if !self.got[j] {
+                return Err(FpError::Range {
+                    context: "model-slot-order",
+                });
+            }
+            mask_coefficients[j] = -self.ls[j] * self.mf[j];
+            constant += self.ls[j] * self.vp[j];
+            debug_sum += self.ls[j] * self.vp[j];
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_SHARED").is_some() && j < 2000 {
+                eprintln!("RUST_SETTLE_SLOT j={} ls={:016x} vp={:016x} mf={:016x}", j, self.ls[j].0[0], self.vp[j].0[0], self.mf[j].0[0]);
+            }
+        }
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() {
+            eprintln!("RUST_SETTLE_SUM ls_vp={:016x}", debug_sum.0[0]);
+        }
+        Ok((mask_coefficients, constant))
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -423,6 +479,7 @@ fn round_values(form: RoundForm, degree: u32) -> u32 {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Psc {
     pub start: Aff,
     pub target: E,
@@ -501,6 +558,10 @@ pub fn round_in(
         });
     }
     let d = round_values(form, degree) + 1;
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() && p.first == 1621 {
+        eprintln!("RUST_ROUND form={:?} degree={} d={} z={:016x}", form, degree, d, z.0[0]);
+    }
     let weight = if matches!(form, RoundForm::Eq2 | RoundForm::Eq) {
         Weight::equality(z, d as usize)
     } else {
@@ -548,6 +609,16 @@ pub fn psc_row(f: &mut HFork, p: &mut Psc, s0: E, kept: &Aff) -> Result<Aff, FpE
     }
     p.row_made = true;
     let form = hp_form(&p.vars, &p.r);
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        let xor = form.iter().fold(0u64, |a, x| a ^ x.0[0]);
+        eprintln!("RUST_PSC_FORM first={} k={} r0={:016x} xor={:016x}", p.first, p.vars.len(), p.r[0].0[0], xor);
+        if p.first == 1621 || p.first == 1583 {
+            eprintln!("RUST_PSC_DETAIL d={:?}", p.vars.iter().map(|v| v.d).collect::<Vec<_>>());
+            for (i, x) in p.r.iter().enumerate() { eprintln!("RUST_PSC_G {} {:016x} {:016x} {:016x}", i, x.0[0], x.0[1], x.0[2]); }
+            for (i, x) in form.iter().enumerate() { eprintln!("RUST_PSC_C {} {:016x}", i, x.0[0]); }
+        }
+    }
     let mut out = Aff::constant(-(p.claim - p.eps * s0));
     for (i, coefficient) in form.into_iter().enumerate() {
         f.hide(p.first + i as u32, E::ZERO, -E::ONE)?;
@@ -558,6 +629,10 @@ pub fn psc_row(f: &mut HFork, p: &mut Psc, s0: E, kept: &Aff) -> Result<Aff, FpE
         product *= poly_at(&weight.psi, challenge);
     }
     out.add(&Aff::constant(p.target).minus(&p.start), product);
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() && p.first == 1583 {
+        eprintln!("RUST_PSC_START_PRODUCT product={:016x} slots={:?}", product.0[0], p.start.s.iter().map(|x| (x.0, x.1.0[0])).collect::<Vec<_>>());
+    }
     out.add(kept, p.eps);
     Ok(out)
 }
@@ -589,6 +664,7 @@ impl core::ops::Mul<E> for Aff {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct TokenSumcheckState {
     pub s_cl: u32,
     pub s_end: u32,
@@ -646,8 +722,13 @@ pub fn stack_rounds(f: &mut HFork, tr: &mut Tr, slot: &mut u32, stack: &mut HSta
 }
 
 pub fn eq_low(rs: &[E], lo: u32, hi: u32) -> Vec<E> {
-    let point: Vec<E> = (lo..hi).rev().map(|v| rs[v as usize]).collect();
-    crate::fp::tensor::eq_table(&point)
+    if lo > hi {
+        return vec![];
+    }
+    if lo == hi {
+        return vec![E::ONE];
+    }
+    crate::fp::tensor::eq_table(&rs[lo as usize..hi as usize])
 }
 
 pub fn eq_low_at(rs: &[E], lo: u32, hi: u32, index: u64) -> E {

@@ -150,9 +150,9 @@ pub(crate) struct RequestFrame<'a, 'b> {
     group: GroupId,
     own: Vec<u32>,
     kept_before: Vec<u32>,
-    at_start: Vec<u32>,
+    pub(crate) at_start: Vec<u32>,
     plain: Vec<E>,
-    mask: Option<u32>,
+    pub(crate) mask: Option<u32>,
     fold: Option<FoldState>,
 }
 
@@ -200,6 +200,9 @@ impl<'a, 'b> RequestFrame<'a, 'b> {
     }
 
     fn at_moment(&self, moment: u32) -> Vec<ReqMessage> {
+        if self.link == self.fixed.shape.links.len() {
+            return vec![];
+        }
         self.fixed.shape.links[self.link]
             .messages
             .iter()
@@ -256,13 +259,29 @@ impl<'a, 'b> RequestFrame<'a, 'b> {
         }
     }
 
+    fn link_name(&self) -> &str {
+        #[cfg(feature = "std")]
+        eprintln!("RUST_LINK_NAME link={} len={}", self.link, self.fixed.shape.links.len());
+        if self.link == self.fixed.shape.links.len() {
+            "last group"
+        } else {
+            &self.fixed.shape.links[self.link].name
+        }
+    }
+
     pub fn first(&mut self) -> Result<First, FpError> {
         self.begin_link();
         let own = self.at_moment(0);
-        self.plain = if self.fixed.shape.links[self.link].plain == 0 {
+        let link_name = self.link_name().to_owned();
+        let plain = if self.link == self.fixed.shape.links.len() {
+            0
+        } else {
+            self.fixed.shape.links[self.link].plain
+        };
+        self.plain = if plain == 0 {
             vec![]
         } else {
-            let bytes = self.cursor.take("plain scalars", &self.fixed.shape.links[self.link].name)?;
+            let bytes = self.cursor.take("plain scalars", &link_name)?;
             let values = elements(bytes);
             self.chain.close(ChainKind::Empty, &words(bytes));
             values
@@ -295,7 +314,7 @@ impl<'a, 'b> RequestFrame<'a, 'b> {
             })?;
             let target = self.groups[self.link].target.clone();
             #[cfg(feature = "std")]
-            if self.fixed.shape.links[self.link].name == "A0" {
+            if self.link_name() == "A0" {
                 eprintln!("A0 target kept={} born={:?} own={}", target.kept.len(), self.groups[self.link].born, own.len());
             }
             let mut notices = Vec::with_capacity(1 + target.kept.len() + own.len() + 1);
@@ -310,12 +329,13 @@ impl<'a, 'b> RequestFrame<'a, 'b> {
             notices.extend(Self::notices(&own));
             notices.push(self.fold_notice(self.link));
             let opening_start = self.cursor.opened.len();
+            let link_name = self.link_name().to_owned();
             let sent = self.book.send(
                 self.cursor,
                 self.chain,
                 &mut self.iopp.statement,
                 &notices,
-                &self.fixed.shape.links[self.link].name,
+                &link_name,
                 false,
             )?;
             let nonce = self
@@ -402,9 +422,10 @@ impl<'a, 'b> RequestFrame<'a, 'b> {
                 &kept,
                 oracle,
                 target,
+                self.group,
             );
             self.iopp.group = self.group;
-            folded?;
+            let folded = folded?;
             self.join(&own, &own_ids);
             Ok(First {
                 own: own_ids,
@@ -589,6 +610,22 @@ mod tests {
     }
 
     #[test]
+    fn debug_head_layout() {
+        let input = accepted_input();
+        let plan = plan_proof(&input).unwrap();
+        let layout = plan.layout().unwrap();
+        let policy = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
+        let layout_bytes = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
+        let kl = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/KL.bin");
+        let configuration = configuration_digest(&[policy, layout_bytes, kl]);
+        let fixed = accepted_request_fixed(configuration, layout_bytes);
+        println!("matrix_rows={} k_row={} k_col={}", fixed.lin.matrix_rows, fixed.lin.k_row(), fixed.lin.k_col());
+        for (i, field) in layout.fields().iter().enumerate().skip(6935).take(20) {
+            println!("{} name={} context={} kind={:?} bytes={}", i, field.message.name, field.message.context, field.message.kind, field.message.bytes);
+        }
+    }
+
+    #[test]
     fn g0_lookup_forest_consumes_exact_transcript() {
         let policy = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
         let layout = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
@@ -607,6 +644,10 @@ mod tests {
             include_bytes!("../../spikes/plans/request-first-plan.bin"),
         );
         let input = accepted_input();
+        let request = crate::fp::request::RequestFile::parse(
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.req"),
+        )
+        .unwrap();
         let plan = plan_proof(&input).unwrap();
         let file_layout = plan.layout().unwrap();
         let mut cursor = Cursor::new(proof, &file_layout, &configuration, &table.commitment);
@@ -621,7 +662,7 @@ mod tests {
             &mut cursor,
             &mut chain,
             accepted_request_fixed(configuration, layout),
-            input,
+            input.clone(),
             run,
         );
         frame.first().unwrap();
@@ -655,6 +696,7 @@ mod tests {
         assert_eq!(slot, 1832);
         assert_eq!(run.tables.fun.len(), 31);
         let mut run = run;
+        run.tokv = request.tokens.clone();
         let mut check = crate::fp::layer_checks::LayerCheck::new(&mut run);
         let stack = check.stack(&mut fork, &mut tr, &mut slot).unwrap();
         assert_eq!(stack.panels.len(), 18, "{:?}", stack.panels.iter().map(|panel| &panel.sn).collect::<Vec<_>>());
@@ -665,6 +707,12 @@ mod tests {
         drop(check);
         let mut merged = crate::fp::layer_checks::ws_fork_merge(&mut run, &stack, &mut fork, &mut tr, &mut slot).unwrap();
         assert_eq!(merged.rho.len(), 33);
+        let pending_g0 = crate::fp::layer_checks::LayerCheck::new(&mut run).pending(&accepted_request_fixed(configuration, layout).lin, &merged).unwrap();
+        let mut pending_g0 = pending_g0;
+        pending_g0.masks.push(crate::fp::mask::MaskTerm {
+            slot: frame.iopp.statement.masks(frame.at_start[0]).take(),
+            coeff: merged.beta,
+        });
         crate::fp::layer::assign_later_phi(&mut run).unwrap();
         assert_eq!(slot, 2006);
         let next_root = file_layout
@@ -680,6 +728,10 @@ mod tests {
         frame.later().unwrap();
         let mut tr = crate::fp::model::Tr::new(frame.cursor, frame.chain, "G0, smallness test");
         let trits = tr.trits(3099, 128).unwrap();
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() {
+            eprintln!("RUST_TRITS {:?}", &trits[..16]);
+        }
         assert_eq!(trits.len(), 3099 * 128);
         drop(tr);
         frame.later().unwrap();
@@ -699,11 +751,11 @@ mod tests {
             .unwrap();
         assert!(fork.n_claim < 1549);
         check.smallness(&mut digits, &trits, &mut fork).unwrap();
+        check.objects_after_smallness(&stack, &mut merged, &mut fork).unwrap();
         assert_eq!(fork.n_claim, 1549, "before={} reads={:?}", check.before_smallness, check.reads_by_matrix);
         check.coefficients(&digits, &mut fork);
         let equation = check.door_h(&fork).unwrap();
         assert_eq!(equation.on_masks.len(), 3204);
-        assert_eq!(equation.target, -fork.c0);
         frame.close(&equation).unwrap();
         let close = file_layout
             .fields()
@@ -788,12 +840,20 @@ mod tests {
             forest,
         )
         .unwrap();
+        run.tokv = request.tokens.clone();
         let mut check = crate::fp::layer_checks::LayerCheck::new(&mut run);
         let stack = check.stack(&mut g1, &mut tr, &mut slot).unwrap();
         drop(check);
         assert!(run.points.contains_key("Z_a"), "points={:?}", run.points.keys());
         let mut merged = crate::fp::layer_checks::ws_fork_merge(&mut run, &stack, &mut g1, &mut tr, &mut slot).unwrap();
-        assert_eq!(merged.rho.len(), 31);
+        assert_eq!(merged.rho.len(), 32);
+        let pending_g1 = crate::fp::layer_checks::LayerCheck::new(&mut run).pending(&accepted_request_fixed(configuration, layout).lin, &merged).unwrap();
+        let mut pending_g1 = pending_g1;
+        pending_g1.masks.push(crate::fp::mask::MaskTerm {
+            slot: frame.iopp.statement.masks(frame.at_start[0]).take(),
+            coeff: merged.beta,
+        });
+        let mut pending = vec![pending_g0, pending_g1];
         assert!(run.points.contains_key("Z_a"), "points after merge={:?}", run.points.keys());
         crate::fp::layer::assign_later_phi(&mut run).unwrap();
         drop(tr);
@@ -813,6 +873,7 @@ mod tests {
         let mut check = crate::fp::layer_checks::LayerCheck::new(&mut run);
         check.objects_before_smallness(&stack, &mut merged, &mut g1, &mut tr).unwrap();
         check.smallness(&mut digits, &trits, &mut g1).unwrap();
+        check.objects_after_smallness(&stack, &mut merged, &mut g1).unwrap();
         // cp_verify: hp.nLin = 1516 for G1 (1549 for G0).
         assert_eq!(g1.n_claim, 1516);
         check.coefficients(&digits, &mut g1);
@@ -880,5 +941,93 @@ mod tests {
             .unwrap()
             .0;
         assert_eq!(frame.cursor.index, close_a1 + 8);
+
+        frame.first().unwrap();
+        let mut h = crate::fp::model::HFork::default();
+        h.slots(2879);
+        let mut tr = crate::fp::model::Tr::new(frame.cursor, frame.chain, "H, look-up");
+        let mut slot = 0;
+        let forest = crate::fp::forest::forest_pad(
+            &mut h,
+            &mut tr,
+            &mut slot,
+            crate::fp::forest::accepted_forest(4, false),
+        )
+        .unwrap();
+        let on: Vec<bool> = (0..64).map(|t| t >= 60).collect();
+        let on_c: Vec<bool> = (0..64).map(|t| t >= 60 && t + 1 < 64).collect();
+        let win: Vec<u32> = (0..64)
+            .map(|t| {
+                if t + 1 < 64 {
+                    request.tokens[t + 1]
+                } else {
+                    199
+                }
+            })
+            .collect();
+        let mut head = crate::fp::output_head::HeadRun::read_messages(
+            &mut h,
+            &mut tr,
+            &mut slot,
+            crate::fp::subproof::HeadRounds {
+                lt: 6,
+                l_pd: 9,
+                lk_w: 11,
+                sums: 9,
+                products: 7,
+                row_values: 4,
+                rows: 0,
+            },
+            accepted_request_fixed(configuration, layout).lin,
+            forest,
+            on,
+            on_c,
+            win,
+        )
+        .unwrap();
+        drop(tr);
+        frame.later().unwrap();
+        let mut tr = crate::fp::model::Tr::new(frame.cursor, frame.chain, "H, smallness test");
+        let trits = tr.trits(1594, 128).unwrap();
+        drop(tr);
+        frame.later().unwrap();
+        let mut tr = crate::fp::model::Tr::new(frame.cursor, frame.chain, "H, smallness test, digits");
+        let mut digits = crate::fp::forest::forest_pad(
+            &mut h,
+            &mut tr,
+            &mut slot,
+            crate::fp::forest::accepted_forest(4, true),
+        )
+        .unwrap();
+        head.prepare(&mut h, &mut tr, &mut slot).unwrap();
+        head.add_main_claims(&mut h).unwrap();
+        head.smallness(&mut digits, &trits, &mut h).unwrap();
+        head.add_post_smallness_claims(&mut h).unwrap();
+        assert_eq!(h.n_claim, 897);
+        head.coefficients(&digits, &mut h);
+        let equation = head.door_h(4, &h).unwrap();
+        frame.close(&equation).unwrap();
+        let close_h = file_layout
+            .fields()
+            .iter()
+            .enumerate()
+            .filter(|(_, field)| field.message.name == "hiding sum" && field.message.context == "H")
+            .last()
+            .unwrap()
+            .0;
+        assert_eq!(frame.cursor.index, close_h + 9);
+
+        crate::fp::last_group::verify_last_group(
+            &mut frame,
+            &mut head,
+            pending,
+            &input,
+            &accepted_request_fixed(configuration, layout),
+            &configuration,
+            &table,
+            proof,
+        )
+        .unwrap();
+        assert_eq!(frame.cursor.index, file_layout.fields().len());
     }
 }

@@ -194,7 +194,7 @@ pub fn plan_open_with_root(
     Ok(())
 }
 
-fn cs_positions(
+pub(crate) fn cs_positions(
     setting: &Setting,
     scope: Scope,
     from: &Stage,
@@ -223,8 +223,8 @@ fn cs_positions(
     }
 }
 
-fn base_positions(setting: &Setting, scope: Scope, stage: &Stage) -> Result<u64, FpError> {
-    positions(
+pub(crate) fn base_positions(setting: &Setting, scope: Scope, stage: &Stage) -> Result<u64, FpError> {
+    let out = positions(
         analysis_of_m(&stage.g).at.agree,
         setting.target - setting.query_work(scope),
         0.0,
@@ -232,7 +232,12 @@ fn base_positions(setting: &Setting, scope: Scope, stage: &Stage) -> Result<u64,
     )
     .ok_or(FpError::Range {
         context: "base-no-positions",
-    })
+    });
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!("RUST_BASE_POSITIONS agree={} bits={} m={} t={} out={:?}", analysis_of_m(&stage.g).at.agree, setting.target - setting.query_work(scope), stage.g.m, stage.t, out);
+    }
+    out
 }
 
 /// Byte layout of a full zero-knowledge proximity test (`plan_iopp`).

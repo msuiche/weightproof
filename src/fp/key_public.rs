@@ -385,28 +385,26 @@ pub struct LinPublic {
 }
 
 impl LinPublic {
-    pub fn shared(
-        fixed: &KeyFixed,
+    pub fn shared_parts(
+        codes: &crate::fp::key_public::Codes,
+        lin: &crate::fp::key_public::LinShape,
+        configuration: &Digest,
         table: &IndexName,
         plan_bytes: &[u8],
         binding_root: &crate::fp::lin::LinBindingRoot,
     ) -> Self {
         let mut parameter_bytes = Vec::new();
         put_bytes(&mut parameter_bytes, plan_bytes);
-        item(
-            &mut parameter_bytes,
-            "configuration",
-            &fixed.configuration.to_le_bytes(),
-        );
+        item(&mut parameter_bytes, "configuration", &configuration.to_le_bytes());
         item(&mut parameter_bytes, "codes", &{
             let mut out = Vec::new();
-            put_vec(&mut out, &fixed.codes.base, code);
-            put_vec(&mut out, &fixed.codes.mask, code);
+            put_vec(&mut out, &codes.base, code);
+            put_vec(&mut out, &codes.mask, code);
             out
         });
         item(&mut parameter_bytes, "the test on the table", &{
             let mut out = Vec::new();
-            lin_shape(&mut out, &fixed.lin);
+            lin_shape(&mut out, lin);
             out
         });
         let parameters = {
@@ -428,6 +426,15 @@ impl LinPublic {
             places: binding_root.places,
             random: binding_root.digest,
         }
+    }
+
+    pub fn shared(
+        fixed: &KeyFixed,
+        table: &IndexName,
+        plan_bytes: &[u8],
+        binding_root: &crate::fp::lin::LinBindingRoot,
+    ) -> Self {
+        Self::shared_parts(&fixed.codes, &fixed.lin, &fixed.configuration, table, plan_bytes, binding_root)
     }
 
     pub fn first_query(&self, label: u64) -> FirstQuery {

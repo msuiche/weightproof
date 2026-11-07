@@ -189,6 +189,10 @@ impl Chain {
         }
         let w = self.words[self.next];
         self.next += 1;
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() && self.round > 100 {
+            eprintln!("RUST_WORD round={} next={} value={:016x}", self.round, self.next - 1, w);
+        }
         w
     }
 

@@ -31,11 +31,7 @@ pub fn tie_left(shape: &Shape, rows: &[E], lo: &[E]) -> Vec<E> {
                 out[3 * i + lane] = if lane == 0 {
                     value
                 } else {
-                    let mut shifted = value;
-                    for _ in 0..8 * lane {
-                        shifted += shifted;
-                    }
-                    shifted
+                    value * E::from_base(crate::fp::field::FieldElement(1u64 << (20 * lane)))
                 };
             }
         }
