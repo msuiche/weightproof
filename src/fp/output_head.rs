@@ -772,7 +772,7 @@ impl HeadRun {
             let w = 16 + 5 - 13;
             let mut at = [Aff::default(), Aff::default()];
             for e in 0..2 {
-                let ec = eq_top(&self.run.forest.zb[e][16..]);
+                let ec = eq_top(&self.run.forest.zb[e][16..16 + self.run.forest.c_k as usize]);
                 let et = eq_top(&self.run.forest.zb[e][..w]);
                 for c in 0..self.run.forest.calls.len() {
                     for th in 0..1usize << w {

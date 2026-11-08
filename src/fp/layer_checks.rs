@@ -20,6 +20,7 @@ const LAM: u64 = 4;
 const LAM_M: u64 = 2;
 const NE: u64 = 4;
 const S2: u64 = 4;
+const XB_NL: u64 = 5;
 const LT: u32 = 6;
 const LS: u32 = 2;
 const LA: u32 = 8;
@@ -194,7 +195,7 @@ impl<'a> LayerCheck<'a> {
 
     fn xb_a(&self, offset: u64, kh: u64) -> Aff {
         let mut out = Aff::default();
-        for limb in 0..4 {
+        for limb in 0..XB_NL {
             out.add(
                 &self.u3at(offset, limb * 512 / S2 + kh),
                 pw(8 * limb as u32),
@@ -619,7 +620,7 @@ impl<'a> LayerCheck<'a> {
             "SEL" => {
                 let mut out = Aff::default();
                 for x in 0..NE {
-                    out.add(&self.sh_a("sel", short, layer_m, x), shift(ew[x as usize], 7));
+                    out.add(&self.sh_a("sel", short, layer_m, x), shift(ew[x as usize], 128));
                 }
                 return out;
             }
@@ -627,7 +628,7 @@ impl<'a> LayerCheck<'a> {
             "L3" => {
                 let mut out = Aff::default();
                 for x in 0..NE {
-                    out.add(&self.sh_a("l3", short, layer_m, x), shift(ew[x as usize], 5));
+                    out.add(&self.sh_a("l3", short, layer_m, x), shift(ew[x as usize], 32));
                 }
                 return out;
             }
@@ -1222,7 +1223,8 @@ impl LayerCheck<'_> {
 
     fn panel_a(&self, f: &HFork, panel: &Panel, i: u64, yv: u64) -> Result<Aff, FpError> {
         match panel.sn.as_str() {
-            "G" | "U" | "LR" => Ok(self.sh_a("m", "zt", i, yv)),
+            "G" | "U" => Ok(self.sh_a("m", "zt", i, yv)),
+            "LR" => Ok(self.sh_a("m", "zt", 2 * i + 1, yv)),
             "V" => Ok(self.sh_a("a", "zt", i, yv)),
             "O" => Ok(self.sh_a("o", "zt", i, yv)),
             "N1" | "N2" => {
@@ -1251,7 +1253,7 @@ impl LayerCheck<'_> {
             "XR" => {
                 let mut out = Aff::default();
                 for x in 0..D {
-                    out.add(&self.sh_a("m", "rt", i, x), panel.weights[x as usize]);
+                    out.add(&self.sh_a("m", "rt", 2 * i + 1, x), panel.weights[x as usize]);
                 }
                 Ok(out)
             }
@@ -1927,7 +1929,7 @@ impl LayerCheck<'_> {
             let c0 = q as u64 * self.mz();
             let zr = &call.zk[7..];
             let ec = eq_top(zr);
-            let coef = -forest.e[q] * crate::fp::smallness::eq_one(&call.zk, 0);
+            let coef = -forest.e[q];
             runs.push(Run2 {
                 tree: self.zz_tree(),
                 row: q as u32,

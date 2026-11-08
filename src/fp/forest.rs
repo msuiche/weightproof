@@ -424,7 +424,7 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
         }
         t_t[c] = table;
     }
-    let ec = eq_top(&zb0[k_t as usize..]);
+    let ec = eq_top(&zb0[k_t as usize..(k_t + c_k) as usize]);
     let mut row = E::ZERO;
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {

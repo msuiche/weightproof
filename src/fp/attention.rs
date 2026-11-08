@@ -832,7 +832,7 @@ impl AttentionRun {
             form.c += digits.e[q] * (digits.alpha - smul(digits.theta, q as u64));
             let call = &digits.calls[q];
             let ec = eq_table(&call.zk[7..]);
-            let coef = -digits.e[q] * crate::fp::smallness::eq_one(&call.zk, 0);
+            let coef = -digits.e[q];
             runs.push(Run2 { tree: self.zz_tree(), row: q as u32, first: q as u64 * self.mz(), coef, weights: ec, w0: 0, count: self.mz() });
         }
         let ey = eq_table(&digits.zy);

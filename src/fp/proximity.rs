@@ -551,6 +551,19 @@ pub fn switch_rows(
             table_bits,
         ),
     );
+    for f in &rows.kept {
+        let i = kept.iter().position(|&o| o == f.oracle).expect("CS: the claim reads a kept member that the group does not have");
+        switch_add_kept(
+            &mut old,
+            &pads[i],
+            anew[i],
+            oracle,
+            target.rest.part,
+            &places,
+            parts.old_pad_at[i],
+            &f.c,
+        );
+    }
     for j in 0..rows.masks as usize {
         switch_add_rest(
             &mut old,
@@ -701,6 +714,10 @@ pub fn last_rows(
     mut row: GroupRow,
 ) -> SingleRows {
     row.c.fix_low(&[E::ZERO], 1, E::ONE);
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() && row.target.0[0] == 0x89044890d677c990 {
+        eprintln!("RUST_LAST_ROWS c0={:016x} c2={:016x} c42={:016x}", row.c.at(0).0[0], row.c.at(2).0[0], row.c.at(42).0[0]);
+    }
     layout.k = 0;
     let kept_rows = layout
         .members
@@ -733,11 +750,7 @@ pub fn base_linear_left(statement: &Statement, rows: &SingleRows, message: &[E])
     for kept in &rows.kept {
         let shape = &statement.oracles[kept.oracle as usize].shape;
         let width = statement.base[shape.code as usize].ell as usize;
-        let count = shape.main_rows as usize * width;
-        let mut coefficients = vec![E::ZERO; count];
-        kept.c.add_to(&mut coefficients);
-        left += inner(&coefficients, &message[offset..offset + count]);
-        offset += count;
+        offset += shape.main_rows as usize * width;
     }
     for j in 0..rows.masks as usize {
         let width = statement.mask[rows.mask_code as usize].ell as usize;
