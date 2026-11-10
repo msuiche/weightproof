@@ -164,6 +164,8 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
   8.68/8.80 ms with byte-identical proof encodings. Large dot-product witnesses
   remain resident across rounds; each fold also computes the next round's
   coefficients from the folded values, with an explicit Lean composition proof.
+  Generic fold chains reuse a per-thread series context, reducing a
+  thirteen-challenge 8,192-element chain from 208–241 us to 119–130 us.
 
 ## Decision register
 

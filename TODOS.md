@@ -141,10 +141,11 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   and connected to the field model. This closes the source-level field/index and
   machine-word arithmetic gaps, not PTX semantics; SF Tensor has not published
   its Lean model.
-  `native-cuda` builds the fixed NVCC kernel through a scoped FFI; all 136 tests
+  `native-cuda` builds the fixed NVCC kernel through a scoped FFI; all 138 tests
   pass on the GB10 and native-CUDA proofs are byte-identical to Rust. PTX launch,
   termination, UB, and synchronization evidence is recorded in
   `spec/ptx-review.md`. Large dot-product witnesses stay resident across rounds;
   each fold computes the next round's coefficients from the folded values.
-  Next: import an available PTX model for compiler/hardware semantics, extend
-  residency to other large tensor operations, and scale benchmarks to 8B.
+  Generic fold chains also reuse one per-thread context and alternate buffers.
+  Next: import an available PTX model for compiler/hardware semantics and scale
+  benchmarks to the 8B serving model.

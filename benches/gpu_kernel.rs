@@ -3,6 +3,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use weightproof::fp::{
     chain::Chain,
     integer_model::{bind_block, m1_first_query, prove_psc_dot_product, small_model, ProverTr},
+    tensor::fold_low,
 };
 use weightproof::fp::{
     field::{ExtensionElement as E, FieldElement as F},
@@ -63,6 +64,20 @@ fn extension_fold_benchmark(c: &mut Criterion) {
                 let proven = prove_psc_dot_product(&mut transcript, pairs.clone());
                 black_box(proven)
             })
+        });
+
+        let values: Vec<E> = (0..8192u64)
+            .map(|i| {
+                E([
+                    F::from_u64(i.wrapping_mul(0x9e37_79b9_7f4a_7c15)).0,
+                    F::from_u64(i.wrapping_mul(0xd1b5_4a32_d192_ed03)).0,
+                    F::from_u64(i.wrapping_mul(0x94d0_49bb_1331_11eb)).0,
+                ])
+            })
+            .collect();
+        let challenges: Vec<E> = (0..13u64).map(|i| E([i + 7, i + 11, i + 13])).collect();
+        c.bench_function("fold-chain-8192/prove", |b| {
+            b.iter(|| black_box(fold_low(values.clone(), &challenges)))
         });
     }
 }

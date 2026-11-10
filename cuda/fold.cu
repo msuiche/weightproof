@@ -301,6 +301,108 @@ struct DotContext {
     }
 };
 
+struct SeriesContext {
+    Ext* values[2] = {nullptr, nullptr};
+    std::size_t capacities[2] = {0, 0};
+    std::size_t count = 0;
+    std::size_t current = 0;
+    cudaStream_t stream = nullptr;
+};
+
+thread_local SeriesContext series_context;
+
+extern "C" void* wp_series_cuda_create(const Ext* input, std::size_t count) {
+    if (input == nullptr || count == 0 || count % 2 != 0) {
+        return nullptr;
+    }
+    SeriesContext* context = &series_context;
+    context->count = count;
+    context->current = 0;
+    if (fold_context.stream == nullptr) {
+        const cudaError_t status = cudaStreamCreate(&fold_context.stream);
+        if (status != cudaSuccess) {
+            return nullptr;
+        }
+    }
+    context->stream = fold_context.stream;
+    cudaError_t status = cudaSuccess;
+    if (status == cudaSuccess) {
+        status = reserve(context->values[0], context->capacities[0], count);
+    }
+    if (status == cudaSuccess) {
+        status = reserve(context->values[1], context->capacities[1], count / 2);
+    }
+    if (status == cudaSuccess) {
+        status = cudaMemcpyAsync(
+            context->values[0], input, count * sizeof(Ext), cudaMemcpyHostToDevice, context->stream);
+    }
+    if (status == cudaSuccess) {
+        status = cudaStreamSynchronize(context->stream);
+    }
+    if (status != cudaSuccess) {
+        return nullptr;
+    }
+    return context;
+}
+
+extern "C" int wp_series_cuda_round(
+    void* opaque,
+    Ext challenge,
+    std::size_t low_half) {
+    if (opaque == nullptr || low_half == 0) {
+        return -1;
+    }
+    SeriesContext& context = *static_cast<SeriesContext*>(opaque);
+    if ((low_half & (low_half - 1)) != 0
+        || low_half > context.count / 2
+        || context.count % (2 * low_half) != 0) {
+        return -1;
+    }
+    const std::size_t next = 1 - context.current;
+    const std::size_t output_count = context.count / 2;
+    const int threads = 256;
+    const int blocks = static_cast<int>((output_count + threads - 1) / threads);
+    fold_kernel<<<blocks, threads, 0, context.stream>>>(
+        context.values[context.current],
+        context.values[next],
+        output_count,
+        low_half,
+        challenge);
+    cudaError_t status = cudaGetLastError();
+    if (status == cudaSuccess) {
+        status = cudaStreamSynchronize(context.stream);
+    }
+    if (status == cudaSuccess) {
+        context.current = next;
+        context.count = output_count;
+    }
+    return status;
+}
+
+extern "C" int wp_series_cuda_download(void* opaque, Ext* output) {
+    if (opaque == nullptr || output == nullptr) {
+        return -1;
+    }
+    SeriesContext& context = *static_cast<SeriesContext*>(opaque);
+    const cudaError_t status = cudaMemcpyAsync(
+        output,
+        context.values[context.current],
+        context.count * sizeof(Ext),
+        cudaMemcpyDeviceToHost,
+        context.stream);
+    if (status == cudaSuccess) {
+        return cudaStreamSynchronize(context.stream);
+    }
+    return status;
+}
+
+extern "C" void wp_series_cuda_destroy(void* opaque) {
+    if (opaque != nullptr) {
+        SeriesContext* context = static_cast<SeriesContext*>(opaque);
+        cudaStreamSynchronize(context->stream);
+    }
+}
+
 extern "C" void* wp_dot_cuda_create(const Ext* a, const Ext* b, std::size_t count) {
     if (a == nullptr || b == nullptr || count == 0 || count % 2 != 0) {
         return nullptr;
@@ -585,6 +687,51 @@ int run_stride(
     return 0;
 }
 
+int run_series_resident() {
+    std::vector<Ext> values(1024);
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        values[i].c[0] = canonical(i * 0x9e3779b97f4a7c15ULL);
+        values[i].c[1] = canonical(i * 0xd1b54a32d192ed03ULL);
+        values[i].c[2] = canonical(i * 0x94d049bb133111ebULL);
+    }
+    void* opaque = wp_series_cuda_create(values.data(), values.size());
+    if (opaque == nullptr) {
+        std::fprintf(stderr, "resident series initialization failed\n");
+        return 1;
+    }
+    const Ext challenges[2] = {{{7, 11, 13}}, {{17, 19, 23}}};
+    const std::size_t strides[2] = {1, 2};
+    for (int round = 0; round < 2; ++round) {
+        const std::size_t low_half = strides[round];
+        std::vector<Ext> expected(values.size() / 2);
+        for (std::size_t block = 0; block < values.size() / (2 * low_half); ++block) {
+            for (std::size_t offset = 0; offset < low_half; ++offset) {
+                const std::size_t zero = offset + 2 * low_half * block;
+                const std::size_t one = zero + low_half;
+                expected[offset + low_half * block] =
+                    reference_fold(values[zero], values[one], challenges[round]);
+            }
+        }
+        const int status = wp_series_cuda_round(opaque, challenges[round], low_half);
+        if (status != 0) {
+            std::fprintf(stderr, "resident series round failed\n");
+            wp_series_cuda_destroy(opaque);
+            return 1;
+        }
+        std::vector<Ext> actual(expected.size());
+        const int download_status = wp_series_cuda_download(opaque, actual.data());
+        if (download_status != 0 || actual != expected) {
+            std::fprintf(stderr, "resident series mismatch at round %d\n", round);
+            wp_series_cuda_destroy(opaque);
+            return 1;
+        }
+        values = std::move(expected);
+    }
+    wp_series_cuda_destroy(opaque);
+    std::printf("resident series: two strided rounds and %zu values match\n", values.size());
+    return 0;
+}
+
 int run_dot_resident() {
     std::vector<Ext> a(1024);
     std::vector<Ext> b(1024);
@@ -694,6 +841,10 @@ int main() {
                 return result;
             }
         }
+    }
+    const int series_result = run_series_resident();
+    if (series_result != 0) {
+        return series_result;
     }
     return run_dot_resident();
 }

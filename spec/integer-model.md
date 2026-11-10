@@ -316,9 +316,11 @@ multiplication, plus fixed-launch index bounds and active/inactive behavior.
 These proofs have no `sorry` or user-added axioms. CI checks this file with Lean
 4.34.1. PTX/compiler/hardware semantics remain outside the model.
 
-On `dgx1` (aarch64 Ubuntu 24.04, NVIDIA GB10, NVCC 13.0), all **136** tests pass
+On `dgx1` (aarch64 Ubuntu 24.04, NVIDIA GB10, NVCC 13.0), all **138** tests pass
 with `native-cuda`, including real multilinear block proving and accepted/mutated
-request verification. Large dot-product rounds keep witnesses resident: each
+request verification. Generic fold chains reuse a per-thread `SeriesContext`;
+an 8,192-element, thirteen-challenge chain improved from 208–241 us to
+119–130 us. Large dot-product rounds keep witnesses resident: each
 fold also computes the next round's coefficients from the folded values. Three
 A/B runs for an 8,192-pair proof improved from 2.24/1.74/2.25 ms to
 2.09/1.66/2.08 ms with byte-identical proof bytes. Native CUDA and default Rust produce byte-identical

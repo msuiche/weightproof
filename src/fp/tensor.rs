@@ -236,26 +236,45 @@ impl Tensor {
         let n = 1usize << self.dense_vars.len();
         let mut values =
             self.values.as_ref().unwrap()[self.first as usize..self.first as usize + n].to_vec();
-        for i in (0..self.dense_vars.len()).rev() {
-            let variable = self.dense_vars[i];
-            if variable >= count {
-                continue;
-            }
-            let challenge = g[variable as usize];
-            let low_half = 1usize << i;
-            let mut next = vec![E::ZERO; values.len() / 2];
-            #[cfg(feature = "icicle-prover")]
-            crate::fp::gpu::dense_fold_extension(&values, challenge, low_half, &mut next)
-                .expect("ICICLE dense fold failed");
-            #[cfg(not(feature = "icicle-prover"))]
-            for b in 0..values.len() / (2 * low_half) {
-                for a in 0..low_half {
-                    let zero = values[a + 2 * low_half * b];
-                    let one = values[a + low_half + 2 * low_half * b];
-                    next[a + low_half * b] = zero + (one - zero) * challenge;
+        #[cfg(feature = "native-cuda")]
+        if n >= crate::fp::gpu::NATIVE_CUDA_MIN {
+            let mut state = crate::fp::native_cuda::FoldState::new(&values)
+                .expect("native CUDA dense-fold initialization failed");
+            for i in (0..self.dense_vars.len()).rev() {
+                let variable = self.dense_vars[i];
+                if variable >= count {
+                    continue;
                 }
+                state
+                    .fold(g[variable as usize], 1usize << i)
+                    .expect("native CUDA dense fold failed");
             }
-            values = next;
+            state
+                .download(&mut values)
+                .expect("native CUDA dense-fold download failed");
+        }
+        if n < 8192 {
+            for i in (0..self.dense_vars.len()).rev() {
+                let variable = self.dense_vars[i];
+                if variable >= count {
+                    continue;
+                }
+                let challenge = g[variable as usize];
+                let low_half = 1usize << i;
+                let mut next = vec![E::ZERO; values.len() / 2];
+                #[cfg(feature = "icicle-prover")]
+                crate::fp::gpu::dense_fold_extension(&values, challenge, low_half, &mut next)
+                    .expect("ICICLE dense fold failed");
+                #[cfg(not(feature = "icicle-prover"))]
+                for b in 0..values.len() / (2 * low_half) {
+                    for a in 0..low_half {
+                        let zero = values[a + 2 * low_half * b];
+                        let one = values[a + low_half + 2 * low_half * b];
+                        next[a + low_half * b] = zero + (one - zero) * challenge;
+                    }
+                }
+                values = next;
+            }
         }
         if values.len() == 1 {
             (None, values[0])
@@ -532,6 +551,20 @@ pub fn fold_low_pair_once(a: &mut Vec<E>, b: &mut Vec<E>, challenge: E) {
 }
 
 pub fn fold_low(mut values: Vec<E>, challenges: &[E]) -> Vec<E> {
+    #[cfg(feature = "native-cuda")]
+    if values.len() >= crate::fp::gpu::NATIVE_CUDA_MIN {
+        let mut state = crate::fp::native_cuda::FoldState::new(&values)
+            .expect("native CUDA fold-chain initialization failed");
+        for &challenge in challenges {
+            state
+                .fold(challenge, 1)
+                .expect("native CUDA fold-chain round failed");
+        }
+        state
+            .download(&mut values)
+            .expect("native CUDA fold-chain download failed");
+        return values;
+    }
     for &challenge in challenges {
         fold_low_once(&mut values, challenge);
     }
@@ -680,6 +713,33 @@ mod tests {
         tensor.fix_low(&[E([2, 0, 0])], 1);
         assert_eq!(tensor.at(0), E([10, 0, 0]));
         assert_eq!(tensor.at(1), E([18, 0, 0]));
+    }
+
+    #[cfg(feature = "native-cuda")]
+    #[test]
+    fn large_dense_fold_matches_rust() {
+        let mut tensor = Tensor::eq(&[], E([2, 0, 0]));
+        tensor.push_dense(13);
+        let values: Vec<E> = (0..8192u64).map(|i| E([i + 1, 0, 0])).collect();
+        tensor.set_values(values.clone(), 0);
+        let gamma: Vec<E> = (0..13u64).map(|i| E([i + 2, 0, 0])).collect();
+        let (folded, factor) = tensor.folded_dense(&gamma, 13);
+        let mut expected = values;
+        for i in (0..13).rev() {
+            let challenge = gamma[i];
+            let low_half = 1usize << i;
+            let mut next = vec![E::ZERO; expected.len() / 2];
+            for block in 0..expected.len() / (2 * low_half) {
+                for offset in 0..low_half {
+                    let zero = expected[offset + 2 * low_half * block];
+                    let one = expected[offset + low_half + 2 * low_half * block];
+                    next[offset + low_half * block] = zero + challenge * (one - zero);
+                }
+            }
+            expected = next;
+        }
+        assert_eq!(factor, expected[0]);
+        assert_eq!(folded, None);
     }
 
     #[test]

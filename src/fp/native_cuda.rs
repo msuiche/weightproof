@@ -19,7 +19,16 @@ struct DotContext {
     _private: [u8; 0],
 }
 
+#[repr(C)]
+struct SeriesContext {
+    _private: [u8; 0],
+}
+
 unsafe extern "C" {
+    fn wp_series_cuda_create(input: *const CExt, count: usize) -> *mut SeriesContext;
+    fn wp_series_cuda_round(context: *mut SeriesContext, challenge: CExt, low_half: usize) -> i32;
+    fn wp_series_cuda_download(context: *mut SeriesContext, output: *mut CExt) -> i32;
+    fn wp_series_cuda_destroy(context: *mut SeriesContext);
     fn wp_fold_cuda_set_mapped(mapped: bool);
     fn wp_fold_cuda(
         input: *const CExt,
@@ -181,6 +190,79 @@ impl Drop for DotState {
     }
 }
 
+pub struct FoldState {
+    context: *mut SeriesContext,
+    count: usize,
+}
+
+impl FoldState {
+    pub fn new(values: &[E]) -> Result<Self, FpError> {
+        if values.is_empty() || values.len() % 2 != 0 {
+            return Err(FpError::BadLength {
+                context: "native-cuda-series",
+            });
+        }
+        let input: Vec<CExt> = values.iter().map(|value| CExt { c: value.0 }).collect();
+        let context = unsafe { wp_series_cuda_create(input.as_ptr(), input.len()) };
+        if context.is_null() {
+            return Err(FpError::Range {
+                context: "native-cuda-series-create",
+            });
+        }
+        Ok(Self {
+            context,
+            count: values.len(),
+        })
+    }
+
+    pub fn fold(&mut self, challenge: E, low_half: usize) -> Result<(), FpError> {
+        if low_half == 0
+            || !low_half.is_power_of_two()
+            || low_half > self.count / 2
+            || self.count % (2 * low_half) != 0
+        {
+            return Err(FpError::BadLength {
+                context: "native-cuda-series",
+            });
+        }
+        let status =
+            unsafe { wp_series_cuda_round(self.context, CExt { c: challenge.0 }, low_half) };
+        if status != 0 {
+            return Err(FpError::Range {
+                context: "native-cuda-series",
+            });
+        }
+        self.count /= 2;
+        Ok(())
+    }
+
+    pub fn download(&self, output: &mut Vec<E>) -> Result<(), FpError> {
+        if output.len() < self.count {
+            return Err(FpError::BadLength {
+                context: "native-cuda-series-download",
+            });
+        }
+        let mut folded = vec![CExt { c: [0; 3] }; self.count];
+        let status = unsafe { wp_series_cuda_download(self.context, folded.as_mut_ptr()) };
+        if status != 0 {
+            return Err(FpError::Range {
+                context: "native-cuda-series-download",
+            });
+        }
+        for (out, value) in output.iter_mut().zip(folded) {
+            *out = E(value.c);
+        }
+        output.truncate(self.count);
+        Ok(())
+    }
+}
+
+impl Drop for FoldState {
+    fn drop(&mut self) {
+        unsafe { wp_series_cuda_destroy(self.context) }
+    }
+}
+
 pub fn fold_extension(
     values: &[E],
     challenge: E,
@@ -235,6 +317,36 @@ mod tests {
         }
         for (index, (actual, expected)) in actual_b.iter().zip(&expected_b).enumerate() {
             assert_eq!(actual, expected, "b index {index}");
+        }
+    }
+
+    #[test]
+    fn fold_state_strided_rounds_match_rust() {
+        let values: Vec<E> = (0..8192u64)
+            .map(|i| {
+                E([
+                    F::from_u64(i.wrapping_mul(0x9e37_79b9_7f4a_7c15)).0,
+                    F::from_u64(i.wrapping_mul(0xd1b5_4a32_d192_ed03)).0,
+                    F::from_u64(i.wrapping_mul(0x94d0_49bb_1331_11eb)).0,
+                ])
+            })
+            .collect();
+        let mut expected = values.clone();
+        let mut state = FoldState::new(&values).unwrap();
+        for (challenge, low_half) in [(E([7, 11, 13]), 1), (E([17, 19, 23]), 2)] {
+            let mut next = vec![E::ZERO; expected.len() / 2];
+            for block in 0..expected.len() / (2 * low_half) {
+                for offset in 0..low_half {
+                    let zero = expected[offset + 2 * low_half * block];
+                    let one = expected[offset + low_half + 2 * low_half * block];
+                    next[offset + low_half * block] = zero + challenge * (one - zero);
+                }
+            }
+            state.fold(challenge, low_half).unwrap();
+            let mut actual = next.clone();
+            state.download(&mut actual).unwrap();
+            assert_eq!(actual, next);
+            expected = next;
         }
     }
 }
