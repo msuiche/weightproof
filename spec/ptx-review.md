@@ -112,13 +112,16 @@ NVCC 13.0.88 generates PTX 9.0 for `sm_121` on the NVIDIA GB10.
   kernel write.
 - The standalone test checks 512 outputs at each stride 1, 2, 4, ..., 512 against
   independent full-precision 128-bit host arithmetic, and checks non-vacuity.
-- The Rust `sumcheck_fold_matches_rust_on_cuda` test and the complete 134-test
-  `native-cuda` suite pass. This includes multilinear block proofs and
-  accepted/mutated key/request fixtures, not an isolated arithmetic benchmark.
+- The Rust `sumcheck_fold_matches_rust_on_cuda` test and the complete 136-test
+  `native-cuda` suite pass. This includes multilinear block proofs, large
+  device-resident dot-product rounds, and accepted/mutated key/request fixtures,
+  not an isolated arithmetic benchmark.
 - Rust and native-CUDA multilinear block proofs are byte-identical.
 
 `formal/GpuFold.lean` proves the integer-lift equations and their canonical
-Goldilocks/cubic-extension counterparts. `Kernel.Launch` additionally models the
+Goldilocks/cubic-extension counterparts. `Ext.nextDotRound_correct` additionally
+proves the fused fold-then-next-coefficient composition used by
+`dot_round_kernel`. `Kernel.Launch` models the
 fixed kernel's guards and source-level index arithmetic: every active thread's
 two checked loads are proved in bounds, `runThread_correct` proves its output
 against the independent reference fold, inactive threads perform no load/store,

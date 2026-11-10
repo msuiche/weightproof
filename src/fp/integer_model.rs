@@ -1388,7 +1388,6 @@ impl PscRoundProver for ProductRoundProver {
     }
 }
 
-#[derive(Clone)]
 pub struct DotProductRoundProver {
     pub pairs: Vec<(
         crate::fp::field::ExtensionElement,
@@ -1399,6 +1398,8 @@ pub struct DotProductRoundProver {
     current_a: Vec<crate::fp::field::ExtensionElement>,
     current_b: Vec<crate::fp::field::ExtensionElement>,
     epsilon: crate::fp::field::ExtensionElement,
+    #[cfg(feature = "native-cuda")]
+    device: Option<crate::fp::native_cuda::DotState>,
 }
 
 impl crate::fp::psc::Summand for DotProductRoundProver {
@@ -1416,6 +1417,28 @@ impl crate::fp::psc::Summand for DotProductRoundProver {
         assert_eq!(point.len(), self.variables);
         let mut a: Vec<_> = end_values.iter().step_by(2).copied().collect();
         let mut b: Vec<_> = end_values.iter().skip(1).step_by(2).copied().collect();
+        #[cfg(feature = "native-cuda")]
+        if a.len() >= crate::fp::gpu::NATIVE_CUDA_MIN {
+            if let Some(device) = &self.device {
+                device
+                    .download(&mut a, &mut b)
+                    .expect("native CUDA download failed");
+            } else {
+                let mut device = crate::fp::native_cuda::DotState::new(&a, &b)
+                    .expect("native CUDA dot-product initialization failed");
+                for &challenge in point {
+                    device.fold(challenge).expect("native CUDA fold failed");
+                }
+                device
+                    .download(&mut a, &mut b)
+                    .expect("native CUDA download failed");
+            }
+        } else {
+            for &challenge in point {
+                crate::fp::tensor::fold_low_pair_once(&mut a, &mut b, challenge);
+            }
+        }
+        #[cfg(not(feature = "native-cuda"))]
         for &challenge in point {
             crate::fp::tensor::fold_low_pair_once(&mut a, &mut b, challenge);
         }
@@ -1442,6 +1465,21 @@ impl PscRoundProver for DotProductRoundProver {
             q[0] = running;
             return q;
         }
+        #[cfg(feature = "native-cuda")]
+        if let Some(device) = &mut self.device {
+            let [zero, one, quadratic] = if round == 0 {
+                device
+                    .coefficients()
+                    .expect("native CUDA dot-product round failed")
+            } else {
+                device.cached()
+            };
+            return vec![
+                self.epsilon * zero,
+                self.epsilon * (one - zero - quadratic),
+                self.epsilon * quadratic,
+            ];
+        }
         let mut zero = crate::fp::field::ExtensionElement::ZERO;
         let mut one = crate::fp::field::ExtensionElement::ZERO;
         let mut quadratic = crate::fp::field::ExtensionElement::ZERO;
@@ -1463,9 +1501,25 @@ impl PscRoundProver for DotProductRoundProver {
 
     fn begin(&mut self, epsilon: crate::fp::field::ExtensionElement) {
         self.epsilon = epsilon;
+        #[cfg(feature = "native-cuda")]
+        if self.current_a.len() >= crate::fp::gpu::NATIVE_CUDA_MIN {
+            self.device = Some(
+                crate::fp::native_cuda::DotState::new(&self.current_a, &self.current_b)
+                    .expect("native CUDA dot-product initialization failed"),
+            );
+        }
     }
 
     fn after_challenge(&mut self, round: usize, challenge: crate::fp::field::ExtensionElement) {
+        #[cfg(feature = "native-cuda")]
+        if self.device.is_some() && round < self.variables {
+            self.device
+                .as_mut()
+                .unwrap()
+                .fold(challenge)
+                .expect("native CUDA fold failed");
+            return;
+        }
         if round < self.variables {
             crate::fp::tensor::fold_low_pair_once(
                 &mut self.current_a,
@@ -1507,6 +1561,8 @@ pub fn prove_psc_dot_product(
         current_a,
         current_b,
         epsilon: E::ONE,
+        #[cfg(feature = "native-cuda")]
+        device: None,
     };
     let end_values: Vec<E> = summand.pairs.iter().flat_map(|&(a, b)| [a, b]).collect();
     let challenges = prove_psc(transcript, &claim, &mut summand, &end_values).unwrap();
@@ -3008,6 +3064,52 @@ mod tests {
         assert_eq!(output.row_target, E::ZERO);
         assert_eq!(output.point, vec![challenges[1]]);
         assert_eq!(channel.offset, bytes.len());
+    }
+
+    #[cfg(feature = "native-cuda")]
+    #[test]
+    fn large_dot_product_proof_verifies_with_resident_witnesses() {
+        use crate::fp::{
+            chain::Chain,
+            field::{ExtensionElement as E, FieldElement as F},
+            mask::MaskSlot,
+            psc::psc_verify,
+        };
+        let model = small_model();
+        let (statement, _) = bind_block(&model, &[0, 1], 4, 4, 1).unwrap();
+        let query = m1_first_query(&statement).unwrap();
+        let pairs: Vec<(E, E)> = (0..8192u64)
+            .map(|i| {
+                (
+                    E::from_base(F::from_u64(i.wrapping_mul(0x9e37_79b9_7f4a_7c15))),
+                    E::from_base(F::from_u64(i.wrapping_mul(0xd1b5_4a32_d192_ed03))),
+                )
+            })
+            .collect();
+        let mut proving_chain = Chain::new(query.clone());
+        let mut prover = ProverTr::new(&mut proving_chain);
+        let (claim, summand, challenges) = prove_psc_dot_product(&mut prover, pairs);
+        let bytes = prover.into_bytes();
+
+        let mut verifier_chain = Chain::new(query);
+        let mut channel = PscBytes {
+            bytes: &bytes,
+            offset: 0,
+            chain: &mut verifier_chain,
+            message: vec![],
+            algebraic_rounds: 0,
+            epsilon: None,
+            challenges: vec![],
+        };
+        let fresh_len = crate::fp::psc::hp_entries(&crate::fp::psc::psc_vars(&claim, &summand))
+            + 2 * summand.pairs.len();
+        let fresh = (0..fresh_len as u64)
+            .map(|index| MaskSlot { oracle: 0, index })
+            .collect();
+        let output = psc_verify(&mut channel, claim, &summand, fresh).unwrap();
+        assert_eq!(output.row_target, E::ZERO);
+        assert_eq!(channel.offset, bytes.len());
+        assert_eq!(channel.challenges, challenges[1..]);
     }
 
     #[test]

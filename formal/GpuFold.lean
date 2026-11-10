@@ -90,6 +90,34 @@ theorem dotRound_nonvacuous :
     (dotRound 2 5 7 11).eval 13 ≠ 0 := by
   decide
 
+/-- Coefficients for the following round, computed from the folded values in
+`dot_round_kernel` after the current challenge is applied. -/
+def nextDotRound (a0 a1 b0 b1 challenge : Int) : DotRound :=
+  dotRound
+    (a0 + (a1 - a0) * challenge)
+    (a1 + (a1 - a0) * challenge)
+    (b0 + (b1 - b0) * challenge)
+    (b1 + (b1 - b0) * challenge)
+
+/-- The fused fold-then-coefficient phase matches direct evaluation on the
+folded state for every input, fold challenge, and evaluation point. -/
+theorem nextDotRound_correct (a0 a1 b0 b1 foldChallenge evalChallenge : Int) :
+    (nextDotRound a0 a1 b0 b1 foldChallenge).eval evalChallenge =
+      dotProductAt
+        (a0 + (a1 - a0) * foldChallenge)
+        (a1 + (a1 - a0) * foldChallenge)
+        (b0 + (b1 - b0) * foldChallenge)
+        (b1 + (b1 - b0) * foldChallenge)
+        evalChallenge := by
+  exact dotRound_correct _ _ _ _ _
+
+theorem nextDotRound_nonvacuous :
+    (nextDotRound 2 5 7 11 13).eval 17 ≠ 0 := by
+  decide
+
+#print axioms nextDotRound_correct
+#print axioms nextDotRound_nonvacuous
+
 #print axioms dotRound_correct
 #print axioms dotRound_nonvacuous
 

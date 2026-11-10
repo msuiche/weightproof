@@ -161,7 +161,9 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
   `fuzz/Cargo.toml` and completed 2,778,910 cases. All 132 Rust tests pass, and
   no-std passes. Native proving selects Rust below the measured 8,192-element
   fold crossover and CUDA above it, reducing the larger block fixture to
-  8.68/8.80 ms with byte-identical proof encodings.
+  8.68/8.80 ms with byte-identical proof encodings. Large dot-product witnesses
+  remain resident across rounds; each fold also computes the next round's
+  coefficients from the folded values, with an explicit Lean composition proof.
 
 ## Decision register
 

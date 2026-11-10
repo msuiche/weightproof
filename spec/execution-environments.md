@@ -97,7 +97,7 @@ ssh dgx1 'systemctl --user status weightproof-actions.service --no-pager'
 
 ## Verified native-CUDA results (2026-11-09)
 
-- 134 tests pass: 127 unit tests and 7 ground-truth integration tests.
+- 136 tests pass: 129 unit tests and 7 ground-truth integration tests.
 - The suite includes real quadratic multilinear block proving, accepted proofs,
   statement mutations, and request-proof rejection.
 - Native CUDA and default Rust produce byte-identical multilinear proofs with
@@ -106,7 +106,7 @@ ssh dgx1 'systemctl --user status weightproof-actions.service --no-pager'
   small-model block. Persistent per-thread buffers and streams reduce this to
   **5.82 ms proving** and **5.73 ms verification**. Proving uses mapped host
   memory; verification uses explicit copies. The persistent implementation
-  passes the same 134 tests and preserves the byte-identical proof digest above.
+  passes the same 136 tests and preserves the byte-identical proof digest above.
 
 ### Profiling and transfer selection
 
@@ -130,7 +130,7 @@ host-layout changes.
 
 ### Rejected scratch and polling experiments
 
-Per-thread `RefCell` conversion buffers passed all 134 CUDA tests but were mostly
+Per-thread `RefCell` conversion buffers passed all 136 CUDA tests but were mostly
 0.5–2% slower in repeated low-load A/B pairs, so they were reverted. Replacing
 `cudaStreamSynchronize` with a `cudaStreamQuery` polling loop was neutral and was
 also reverted. Nsight showed that round-boundary launch/synchronization overhead
@@ -159,6 +159,20 @@ workload made baseline samples bimodal, but every threshold sample stayed near
 small-block baseline above is retained rather than replaced with a noisy number.
 Baseline and threshold arithmetic/forest proof encodings were byte-identical with
 SHA-256 `ffd242f078c45cc97c32fd3d4992c6cad04ec159ad59c3180320723114b40c66`.
+
+### Device-resident dot-product rounds (2026-11-10)
+
+At and above the crossover, `DotProductRoundProver` uploads both witnesses once.
+Each `dot_round_kernel` launch folds the current pair and computes the following
+round's three coefficients from the folded values. The initial coefficient pass
+is the only additional launch. No full witness returns until final evaluation.
+`Ext.nextDotRound_correct` proves the fold-then-coefficient composition in Lean.
+
+Three interleaved A/B runs for a complete 8,192-pair PSC proof gave baseline
+2.24/1.74/2.25 ms and resident 2.09/1.66/2.08 ms (baseline/resident ranges
+1.74–2.25 ms and 1.66–2.09 ms). The large proof bytes are identical with SHA-256
+`820fc388ddd948216ea3c99e2f0d127f139407240cab6d40d35b255027bd7922`.
+All 136 native tests pass: 129 unit tests and 7 ground-truth integration tests.
 
 ### Larger model/window benchmark
 

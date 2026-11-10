@@ -22,7 +22,7 @@ use icicle_runtime::Device;
 /// Measured GB10 crossover: native CUDA wins at 8,192 elements and loses at
 /// 4,096. Smaller folds avoid launch, synchronization, and transfer overhead.
 #[cfg(feature = "native-cuda")]
-const NATIVE_CUDA_MIN: usize = 8192;
+pub(crate) const NATIVE_CUDA_MIN: usize = 8192;
 
 fn backend_error(_error: icicle_runtime::IcicleError) -> FpError {
     FpError::Range {
