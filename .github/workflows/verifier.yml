@@ -73,8 +73,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: cargo-bins/cargo-binstall@v1.26.2
-        with:
-          crate: cargo-fuzz
+      - name: Install cargo-fuzz
+        run: cargo binstall cargo-fuzz --no-confirm
       - name: Fuzz verifier parsers
         run: |
           cd fuzz
