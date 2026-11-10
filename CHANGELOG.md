@@ -12,6 +12,7 @@
 - Execute the complete 134-test suite on an NVIDIA GB10 and generate `sm_121` PTX.
 - Reuse per-thread CUDA buffers and streams, with mapped transfers for proving and copies for verification, to reduce small-model block proving to 5.82 ms and verification to 5.73 ms while preserving byte-identical proofs.
 - Measure four-layer, feed-forward-width-8, eight-token-window proofs on Rust and native CUDA without labeling the fixture as an 8B model.
+- Select Rust below the measured 8,192-element fold crossover and native CUDA above it, reducing the larger block fixture to 8.68 ms proving and 8.80 ms verification while preserving byte-identical proofs.
 - Document local, CPU-backend, and DGX CUDA execution environments, verification commands, performance baselines, and PTX safety evidence.
 
 ### Infrastructure

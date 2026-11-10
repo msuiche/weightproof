@@ -159,7 +159,9 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
   1,583 libFuzzer cases without a panic and is registered in CI with the other
   parser targets. All five targets pass locally; `fp_layout` was restored in
   `fuzz/Cargo.toml` and completed 2,778,910 cases. All 132 Rust tests pass, and
-  no-std passes.
+  no-std passes. Native proving selects Rust below the measured 8,192-element
+  fold crossover and CUDA above it, reducing the larger block fixture to
+  8.68/8.80 ms with byte-identical proof encodings.
 
 ## Decision register
 

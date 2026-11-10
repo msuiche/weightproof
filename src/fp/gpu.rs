@@ -19,6 +19,11 @@ use icicle_goldilocks::{field::ScalarField, program::goldilocks::Program};
 use icicle_runtime::memory::HostSlice;
 use icicle_runtime::Device;
 
+/// Measured GB10 crossover: native CUDA wins at 8,192 elements and loses at
+/// 4,096. Smaller folds avoid launch, synchronization, and transfer overhead.
+#[cfg(feature = "native-cuda")]
+const NATIVE_CUDA_MIN: usize = 8192;
+
 fn backend_error(_error: icicle_runtime::IcicleError) -> FpError {
     FpError::Range {
         context: "icicle-backend",
@@ -81,6 +86,17 @@ std::thread_local! {
 pub fn sumcheck_fold(values: &[F], challenge: F, output: &mut [F]) -> Result<(), FpError> {
     #[cfg(feature = "native-cuda")]
     {
+        if values.len() < NATIVE_CUDA_MIN {
+            if values.is_empty() || values.len() % 2 != 0 || output.len() != values.len() / 2 {
+                return Err(FpError::BadLength {
+                    context: "native-cuda-base",
+                });
+            }
+            for (out, pair) in output.iter_mut().zip(values.chunks_exact(2)) {
+                *out = pair[0] + challenge * (pair[1] - pair[0]);
+            }
+            return Ok(());
+        }
         return crate::fp::native_cuda::fold_base(values, challenge, output);
     }
     #[cfg(not(feature = "native-cuda"))]
@@ -186,6 +202,28 @@ fn fold_extension_strided(
 ) -> Result<(), FpError> {
     #[cfg(feature = "native-cuda")]
     {
+        if values.len() < NATIVE_CUDA_MIN {
+            if values.is_empty()
+                || values.len() % 2 != 0
+                || output.len() != values.len() / 2
+                || low_half == 0
+                || !low_half.is_power_of_two()
+                || low_half > output.len()
+                || values.len() % (2 * low_half) != 0
+            {
+                return Err(FpError::BadLength {
+                    context: "native-cuda-extension",
+                });
+            }
+            for block in 0..values.len() / (2 * low_half) {
+                for offset in 0..low_half {
+                    let zero = values[offset + 2 * low_half * block];
+                    let one = values[offset + low_half + 2 * low_half * block];
+                    output[offset + low_half * block] = zero + challenge * (one - zero);
+                }
+            }
+            return Ok(());
+        }
         return crate::fp::native_cuda::fold_extension(values, challenge, low_half, output);
     }
     #[cfg(not(feature = "native-cuda"))]
@@ -294,7 +332,7 @@ mod tests {
     use super::*;
 
     fn assert_fold_on_device(device_type: &str) {
-        let values: Vec<F> = (0..1024u64)
+        let values: Vec<F> = (0..8192u64)
             .map(|i| F::from_u64(i.wrapping_mul(0x9e37_79b9_7f4a_7c15)))
             .collect();
         let challenge = F::from_u64(0xfedc_ba98_7654_3210);
@@ -302,15 +340,15 @@ mod tests {
             .chunks_exact(2)
             .map(|pair| pair[0] + challenge * (pair[1] - pair[0]))
             .collect();
-        assert!(sumcheck_fold(&values[..1023], challenge, &mut [F::ZERO; 512]).is_err());
-        assert!(sumcheck_fold(&values, challenge, &mut [F::ZERO; 511]).is_err());
+        assert!(sumcheck_fold(&values[..8191], challenge, &mut [F::ZERO; 4096]).is_err());
+        assert!(sumcheck_fold(&values, challenge, &mut [F::ZERO; 4095]).is_err());
 
         initialize_device(device_type).unwrap();
         let mut actual = vec![F::ZERO; expected.len()];
         sumcheck_fold(&values, challenge, &mut actual).unwrap();
         assert_eq!(actual, expected);
 
-        let extension_values: Vec<E> = (0..256u64)
+        let extension_values: Vec<E> = (0..8192u64)
             .map(|i| {
                 E([
                     F::from_u64(i.wrapping_mul(0x9e37_79b9_7f4a_7c15)).0,
@@ -326,7 +364,7 @@ mod tests {
             .collect();
         let mut extension_actual = vec![E::ZERO; extension_expected.len()];
         assert!(sumcheck_fold_extension(
-            &extension_values[..255],
+            &extension_values[..8191],
             extension_challenge,
             &mut extension_actual,
         )

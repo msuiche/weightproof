@@ -292,7 +292,8 @@ on ICICLE CPU and rejects odd input and incorrect output lengths.
 `sumcheck_fold_extension` additionally implements the protocol's actual cubic
 extension arithmetic, including the `X^3 = 2` reduction, and matches the existing
 Rust extension implementation on 256 nontrivial elements. The `gpu_kernel`
-benchmark compares that operation between Rust and ICICLE CPU. Fusing the cubic
+benchmark compares Rust with the active backend from 1,024 through 262,144
+elements. Fusing the cubic
 program and performing the even/odd split during host conversion reduced the
 1,024-element ICICLE CPU fold from 22.26 ms to 340 us (about 65x). Plain Rust
 takes 3.53 us at this small size, so this is a correctness and dispatch baseline,
@@ -309,10 +310,11 @@ CI runs the complete ICICLE-enabled suite.
 
 `formal/GpuFold.lean` proves universal correctness of the fused equations against
 an independent reference fold, the multilinear dot-product quadratic coefficient
-identity, and non-vacuity witnesses. The integer-
-lift proof has no `sorry` or user-added axioms (`propext` and `Quot.sound` only);
-the witness is axiom-free. CI checks this file with Lean 4.34.1. Modular reduction
-remains covered by the Goldilocks field implementation.
+identity, and non-vacuity witnesses. It also proves canonical Goldilocks field
+operations, exact unsigned-word addition, subtraction, 128-bit reduction, and
+multiplication, plus fixed-launch index bounds and active/inactive behavior.
+These proofs have no `sorry` or user-added axioms. CI checks this file with Lean
+4.34.1. PTX/compiler/hardware semantics remain outside the model.
 
 On `dgx1` (aarch64 Ubuntu 24.04, NVIDIA GB10, NVCC 13.0), all **134** tests pass
 with `native-cuda`, including real multilinear block proving and accepted/mutated
@@ -320,7 +322,11 @@ request verification. Native CUDA and default Rust produce byte-identical
 multilinear block proofs with the same SHA-256 above. The standalone CUDA test
 also checks 512 outputs at each of ten strides against independent 128-bit host
 arithmetic. `make -C cuda check` reproduces the executable and PTX; the generated
-kernel targets `sm_121`. PTX-level formalization is reviewed in
+kernel targets `sm_121`. Below 8,192 input elements the backend uses Rust;
+at and above that measured crossover it uses native CUDA. This reduces the
+four-layer/f8/window-8 fixture to 8.68 ms proving and 8.80 ms verification in
+interleaved A/B runs. The thresholded proof encoding is byte-identical to the
+pre-threshold encoding. PTX-level formalization is reviewed in
 `spec/ptx-review.md`; full-model 8B performance is still outstanding.
 
 ## 12. Required evidence and M1 acceptance

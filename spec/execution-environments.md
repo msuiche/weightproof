@@ -23,7 +23,7 @@ No packages were installed. The only PATH addition required is
 |---|---|---|
 | default | laptop or Linux CPU | Rust verifier and multilinear prover |
 | `icicle-prover` | laptop or Linux CPU | ICICLE Goldilocks differential tests and CPU baseline |
-| `native-cuda` | `dgx1` GB10 | Fixed NVCC kernel, full proofs, PTX generation |
+| `native-cuda` | `dgx1` GB10 | Rust below 8,192 elements; fixed NVCC kernel at and above it |
 
 ICICLE remains the evaluated CPU backend. Its CUDA source repository is not
 publicly available and its release binaries target x86 Linux, while `dgx1` is
@@ -128,6 +128,38 @@ implementation. The 7.78/5.80 ms persistent-device context remains the accepted
 baseline. Further work should profile stream/copy latency before trying more
 host-layout changes.
 
+### Rejected scratch and polling experiments
+
+Per-thread `RefCell` conversion buffers passed all 134 CUDA tests but were mostly
+0.5–2% slower in repeated low-load A/B pairs, so they were reverted. Replacing
+`cudaStreamSynchronize` with a `cudaStreamQuery` polling loop was neutral and was
+also reverted. Nsight showed that round-boundary launch/synchronization overhead
+dominates the tiny folds, so backend selection is more effective than another
+host-layout or synchronization tweak.
+
+### Measured backend crossover (2026-11-10)
+
+`gpu::sumcheck_fold` and `gpu::dense_fold_extension` use Rust below 8,192 input
+elements and native CUDA at and above it. The same validation and field equations
+apply on both paths. Size-sweep results on the GB10:
+
+| Input elements | Rust | Native CUDA |
+|---:|---:|---:|
+| 1,024 | 7.99 us | 18.59 us |
+| 4,096 | 20.73 us | 35.32 us |
+| 8,192 | 63.97 us | 40.95 us |
+| 16,384 | 82.93 us | 61.57 us |
+| 65,536 | 330.42 us | 190.91 us |
+| 262,144 | 2,051.21 us | 737.69 us |
+
+The larger block fixture improved from 18.4–23.8 ms to 8.68 ms proving and from
+16.7–20.5 ms to 8.80 ms verification in interleaved A/B runs. The other GPU
+workload made baseline samples bimodal, but every threshold sample stayed near
+8.7/8.8 ms. Small-block movement was minor by comparison, so the 5.82/5.73 ms
+small-block baseline above is retained rather than replaced with a noisy number.
+Baseline and threshold arithmetic/forest proof encodings were byte-identical with
+SHA-256 `ffd242f078c45cc97c32fd3d4992c6cad04ec159ad59c3180320723114b40c66`.
+
 ### Larger model/window benchmark
 
 `block-4-layer-f8-window8` uses four transformer layers, feed-forward width 8,
@@ -137,7 +169,8 @@ not an 8B model. Every run validates the proof before measuring. Results:
 | Backend | Prove | Verify |
 |---|---:|---:|
 | Local Rust | 4.59 ms | 4.86 ms |
-| GB10 native CUDA | 21.80 ms | 15.95 ms |
+| GB10 native CUDA before thresholding | 18.4–23.8 ms | 16.7–20.5 ms |
+| GB10 threshold-selected backend | 8.68 ms | 8.80 ms |
 
 No 8B weight fixture or loader exists in this repository, so these numbers are
 not presented as 8B results.

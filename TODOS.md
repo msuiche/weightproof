@@ -117,6 +117,9 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   alone. The four-layer/f8/window-8 benchmark takes 4.59/4.86 ms locally and
   21.98/17.20 ms on the GB10 over 30 samples;
   it is not an 8B result because no 8B fixture or loader is present.
+  The backend uses Rust below 8,192 input elements and CUDA at and above it;
+  threshold selection reduces this larger fixture to 8.68/8.80 ms in interleaved
+  A/B runs, while preserving byte-identical proof encodings.
   CI includes two-layer and two-request cases.
 - **M2 kernel lane:** ICICLE v4 selected; `fp::gpu::sumcheck_fold` and the
   protocol-exact `sumcheck_fold_extension` pass CPU differential tests, including
@@ -142,5 +145,6 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   pass on the GB10 and native-CUDA proofs are byte-identical to Rust. PTX launch,
   termination, UB, and synchronization evidence is recorded in
   `spec/ptx-review.md`.
-  Next: import an available PTX model for compiler/hardware semantics,
-  remove per-fold allocation/copies, and scale benchmarks to the 8B serving model.
+  Next: import an available PTX model for compiler/hardware semantics, keep large
+  tensors device-resident across rounds, and scale benchmarks to the 8B serving
+  model. Small folds now use Rust below the measured 8,192-element crossover.
