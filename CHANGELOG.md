@@ -8,6 +8,7 @@
 - Generate quadratic multilinear dot-product proofs with zero-padded witnesses and paired witness folding.
 - Run protocol-exact Goldilocks and cubic-extension folds through ICICLE CPU or a native NVCC CUDA backend, with Lean correctness and non-vacuity proofs.
 - Prove canonical Goldilocks extension folding and fixed CUDA launch/index safety in Lean, including active/inactive thread behavior and a concrete non-vacuity witness.
+- Prove the CUDA unsigned-word `add`, `sub`, 128-bit `reduce128`, and `mul` implementations against canonical modular arithmetic, with field-level correctness wrappers.
 - Execute the complete 134-test suite on an NVIDIA GB10 and generate `sm_121` PTX.
 - Reuse per-thread CUDA buffers and streams, with mapped transfers for proving and copies for verification, to reduce small-model block proving to 5.82 ms and verification to 5.73 ms while preserving byte-identical proofs.
 - Measure four-layer, feed-forward-width-8, eight-token-window proofs on Rust and native CUDA without labeling the fixture as an 8B model.

@@ -1,3 +1,5 @@
+set_option maxRecDepth 10000
+
 namespace Weightproof
 
 /-- Goldilocks modulus. The extension equations below are proved over the
@@ -217,6 +219,322 @@ theorem foldFused_nonvacuous :
 
 end FieldExt
 
+/-! Exact natural-number model of the unsigned machine-word operations in
+`cuda/fold.cu`. -/
+namespace Word
+
+def base : Nat := 0x10000000000000000
+def epsilon : Nat := 0xffffffff
+def modulus : Nat := 0xffffffff00000001
+
+def wrapSub (a b : Nat) : Nat := (a + base - b) % base
+
+theorem wrapSub_of_le {a b : Nat} (_ha : a < base) (hb : b ≤ a) :
+    wrapSub a b = a - b := by
+  have h : a + base - b = a - b + base := by omega
+  simp [wrapSub, h, Nat.add_mod_right, Nat.mod_eq_of_lt (show a - b < base by omega)]
+
+theorem wrapSub_of_lt {a b : Nat} (_ha : a < base) (hb : b < base) (h : a < b) :
+    wrapSub a b = base - (b - a) := by
+  simp [wrapSub, Nat.mod_eq_of_lt (show a + base - b < base by omega)]
+  omega
+
+theorem wrapSub_lt (a b : Nat) : wrapSub a b < base := by
+  exact Nat.mod_lt _ (by decide)
+
+def add (a b : Nat) : Nat :=
+  let notB := modulus - b
+  let difference := wrapSub a notB
+  if a < notB then wrapSub difference epsilon else difference
+
+def sub (a b : Nat) : Nat :=
+  let difference := wrapSub a b
+  if a < b then wrapSub difference epsilon else difference
+
+theorem add_correct {a b : Nat} (ha : a < modulus) (hb : b < modulus) :
+    add a b = (a + b) % modulus := by
+  have haBase : a < base := by simp [base, modulus] at *; omega
+  have hbBase : b < base := by simp [base, modulus] at *; omega
+  have hnotBase : modulus - b < base := by simp [base, modulus] at *; omega
+  by_cases h : a < modulus - b
+  · have hd : wrapSub a (modulus - b) = base - (modulus - b - a) :=
+      wrapSub_of_lt haBase hnotBase h
+    have hdBase : wrapSub a (modulus - b) < base := wrapSub_lt _ _
+    have he : epsilon ≤ wrapSub a (modulus - b) := by
+      simp [base, modulus, epsilon] at *
+      omega
+    simp only [add, h, ↓reduceIte]
+    rw [wrapSub_of_le hdBase he, hd]
+    rw [Nat.mod_eq_of_lt]
+    · simp [base, modulus, epsilon] at *
+      omega
+    · simp [modulus] at *
+      omega
+  · have hle : modulus - b ≤ a := Nat.le_of_not_gt h
+    have hd : wrapSub a (modulus - b) = a - (modulus - b) :=
+      wrapSub_of_le haBase hle
+    simp only [add, h, ↓reduceIte, hd]
+    rw [Nat.mod_eq_sub_mod (show a + b ≥ modulus by simp [modulus] at *; omega)]
+    rw [Nat.mod_eq_of_lt]
+    · simp [modulus] at *
+      omega
+    · simp [modulus] at *
+      omega
+
+theorem sub_correct {a b : Nat} (ha : a < modulus) (hb : b < modulus) :
+    sub a b = (a + modulus - b) % modulus := by
+  have haBase : a < base := by simp [base, modulus] at *; omega
+  have hbBase : b < base := by simp [base, modulus] at *; omega
+  by_cases h : a < b
+  · have hd : wrapSub a b = base - (b - a) := wrapSub_of_lt haBase hbBase h
+    have hdBase : wrapSub a b < base := wrapSub_lt _ _
+    have he : epsilon ≤ wrapSub a b := by
+      simp [base, modulus, epsilon] at *
+      omega
+    simp only [sub, h, ↓reduceIte]
+    rw [wrapSub_of_le hdBase he, hd]
+    rw [Nat.mod_eq_of_lt]
+    · simp [base, modulus, epsilon] at *
+      omega
+    · simp [modulus] at *
+      omega
+  · have hle : b ≤ a := Nat.le_of_not_gt h
+    have hd : wrapSub a b = a - b := wrapSub_of_le haBase hle
+    simp only [sub, h, ↓reduceIte, hd]
+    have hraw : a + modulus - b = modulus + (a - b) := by omega
+    rw [hraw, Nat.add_mod_left, Nat.mod_eq_of_lt (show a - b < modulus by omega)]
+
+def canonical (x : Nat) : Nat := if x ≥ modulus then x - modulus else x
+
+theorem canonical_correct {x : Nat} (hx : x < 2 * modulus) :
+    canonical x = x % modulus := by
+  by_cases h : x ≥ modulus
+  · simp only [canonical, h, ↓reduceIte]
+    rw [Nat.mod_eq_sub_mod h, Nat.mod_eq_of_lt (by omega)]
+  · have hx' : x < modulus := Nat.lt_of_not_ge h
+    simp [canonical, h, Nat.mod_eq_of_lt hx']
+
+def highWord (hi : Nat) : Nat := hi / 0x100000000
+def lowWord (hi : Nat) : Nat := hi % 0x100000000
+
+def reduceDifference (hi lo : Nat) : Nat :=
+  wrapSub (wrapSub lo (highWord hi)) (if lo < highWord hi then epsilon else 0)
+
+theorem highWord_lt {hi : Nat} (hhi : hi < modulus) : highWord hi < 0x100000000 := by
+  have hhiBase : hi < base := by simp [base, modulus] at *; omega
+  exact (Nat.div_lt_iff_lt_mul (by decide)).2 (by simpa [highWord, base] using hhiBase)
+
+theorem reduceDifference_mod {hi lo : Nat}
+    (hhi : hi < modulus) (hlo : lo < base) (m : Nat) :
+    (reduceDifference hi lo + m) % modulus =
+      (lo + modulus - highWord hi + m) % modulus := by
+  have hhighSmall := highWord_lt hhi
+  have hhighBase : highWord hi < base := by simp [base] at *; omega
+  by_cases h : lo < highWord hi
+  · have hd : wrapSub lo (highWord hi) = base - (highWord hi - lo) :=
+      wrapSub_of_lt hlo hhighBase h
+    have hdBase : wrapSub lo (highWord hi) < base := wrapSub_lt _ _
+    have he : epsilon ≤ wrapSub lo (highWord hi) := by
+      simp [base, modulus, epsilon] at *
+      omega
+    simp only [reduceDifference, h, ↓reduceIte]
+    rw [wrapSub_of_le hdBase he, hd]
+    have hraw : lo + modulus - highWord hi + m = modulus - (highWord hi - lo) + m := by omega
+    rw [hraw]
+    have hbase : base - (highWord hi - lo) - epsilon = modulus - (highWord hi - lo) := by
+      simp [base, modulus, epsilon]
+      omega
+    rw [hbase]
+  · have hle : highWord hi ≤ lo := Nat.le_of_not_gt h
+    have hd : wrapSub lo (highWord hi) = lo - highWord hi :=
+      wrapSub_of_le hlo hle
+    have hdBase : wrapSub lo (highWord hi) < base := wrapSub_lt _ _
+    simp only [reduceDifference, h, ↓reduceIte]
+    rw [wrapSub_of_le hdBase (Nat.zero_le _), hd]
+    have hraw : lo + modulus - highWord hi + m = modulus + (lo - highWord hi + m) := by omega
+    rw [hraw, Nat.add_mod_left]
+    simp only [Nat.sub_zero]
+
+def adjust (d m : Nat) : Nat :=
+  ((d + m) % base + if (d + m) % base < m then epsilon else 0) % base
+
+def reduce128 (hi lo : Nat) : Nat :=
+  canonical (adjust (reduceDifference hi lo) (lowWord hi * 0x100000000 - lowWord hi))
+
+theorem lowWord_mul (hi : Nat) :
+    lowWord hi * 0x100000000 - lowWord hi = lowWord hi * epsilon := by
+  simp [epsilon]
+  omega
+
+theorem reduce128_overflow {hi lo : Nat}
+    (hdBase : reduceDifference hi lo < base)
+    (hmLt : lowWord hi * 0x100000000 - lowWord hi < modulus)
+    (hover : reduceDifference hi lo +
+      (lowWord hi * 0x100000000 - lowWord hi) ≥ base) :
+    reduce128 hi lo =
+      (reduceDifference hi lo + (lowWord hi * 0x100000000 - lowWord hi)) % modulus := by
+  have hsumBase : reduceDifference hi lo +
+      (lowWord hi * 0x100000000 - lowWord hi) < 2 * base := by
+    have hpbase : modulus < base := by decide
+    omega
+  have hr : (reduceDifference hi lo +
+      (lowWord hi * 0x100000000 - lowWord hi)) % base =
+      reduceDifference hi lo + (lowWord hi * 0x100000000 - lowWord hi) - base := by
+    rw [Nat.mod_eq_sub_mod hover, Nat.mod_eq_of_lt (by omega)]
+  have hrm : reduceDifference hi lo +
+      (lowWord hi * 0x100000000 - lowWord hi) - base <
+      lowWord hi * 0x100000000 - lowWord hi := by omega
+  simp only [reduce128, adjust, hr, hrm, ↓reduceIte]
+  have hsumStrong : reduceDifference hi lo +
+      (lowWord hi * 0x100000000 - lowWord hi) < base + modulus := by
+    have hpbase : modulus < base := by decide
+    omega
+  have hbaseEq : base = modulus + epsilon := by decide
+  have harg : reduceDifference hi lo +
+      (lowWord hi * 0x100000000 - lowWord hi) - base + epsilon < base := by
+    omega
+  have hraw : reduceDifference hi lo +
+      (lowWord hi * 0x100000000 - lowWord hi) - base + epsilon =
+      reduceDifference hi lo + (lowWord hi * 0x100000000 - lowWord hi) - modulus := by
+    omega
+  rw [Nat.mod_eq_of_lt harg, hraw]
+  have hbound : reduceDifference hi lo +
+      (lowWord hi * 0x100000000 - lowWord hi) - modulus < 2 * modulus := by
+    have hbase : 2 * base < 3 * modulus := by decide
+    omega
+  have hge : reduceDifference hi lo +
+      (lowWord hi * 0x100000000 - lowWord hi) ≥ modulus := by
+    have hpbase : modulus < base := by decide
+    omega
+  exact (canonical_correct hbound).trans (Nat.mod_eq_sub_mod hge).symm
+
+theorem canonical_adjust_noOverflow {d m : Nat} (hlt : d + m < base) :
+    canonical (adjust d m) = (d + m) % modulus := by
+  have hr : (d + m) % base = d + m := Nat.mod_eq_of_lt hlt
+  have hrm : ¬d + m < m := by omega
+  simp only [adjust, hr, hrm, ↓reduceIte, Nat.add_zero]
+  exact canonical_correct (by
+    have hbase : base < 2 * modulus := by decide
+    omega)
+
+theorem reduce128_noOverflow {hi lo : Nat}
+    (hlt : reduceDifference hi lo +
+      (lowWord hi * 0x100000000 - lowWord hi) < base) :
+    reduce128 hi lo =
+      (reduceDifference hi lo + (lowWord hi * 0x100000000 - lowWord hi)) % modulus :=
+  canonical_adjust_noOverflow hlt
+
+theorem reduce128_core {hi lo : Nat} (_hhi : hi < modulus) (_hlo : lo < base) :
+    reduce128 hi lo =
+      (reduceDifference hi lo + (lowWord hi * 0x100000000 - lowWord hi)) % modulus := by
+  have hdBase : reduceDifference hi lo < base := wrapSub_lt _ _
+  have hlow : lowWord hi < 0x100000000 := Nat.mod_lt _ (by decide)
+  have hm : lowWord hi * 0x100000000 - lowWord hi = lowWord hi * epsilon := lowWord_mul hi
+  have hmLt : lowWord hi * 0x100000000 - lowWord hi < modulus := by
+    rw [hm]
+    have hlowEps : lowWord hi ≤ epsilon := by simp [epsilon]; omega
+    have hle : lowWord hi * epsilon ≤ epsilon * epsilon :=
+      Nat.mul_le_mul_right _ hlowEps
+    have heps : epsilon * epsilon < modulus := by decide
+    omega
+  by_cases hover : reduceDifference hi lo +
+      (lowWord hi * 0x100000000 - lowWord hi) ≥ base
+  · exact reduce128_overflow hdBase hmLt hover
+  · exact reduce128_noOverflow (Nat.lt_of_not_ge hover)
+
+theorem reduce128_correct {hi lo : Nat} (hhi : hi < modulus) (hlo : lo < base) :
+    reduce128 hi lo = (hi * base + lo) % modulus := by
+  rw [reduce128_core hhi hlo, reduceDifference_mod hhi hlo]
+  have hdecomp := Nat.div_add_mod hi 0x100000000
+  simp only [highWord, lowWord, base, modulus] at *
+  omega
+
+def mul (a b : Nat) : Nat := reduce128 ((a * b) / base) ((a * b) % base)
+
+theorem productHigh_lt {a b : Nat} (ha : a < modulus) (hb : b < modulus) :
+    (a * b) / base < modulus := by
+  by_cases ha0 : a = 0
+  · simp [ha0, modulus]
+  · have hbBase : b < base := Nat.lt_trans hb (by decide)
+    have haPos : 0 < a := by omega
+    have hproduct : a * b < a * base :=
+      (Nat.mul_lt_mul_left haPos).2 hbBase
+    have hdiv : (a * b) / base < a :=
+      (Nat.div_lt_iff_lt_mul (by simp [base])).2 hproduct
+    exact Nat.lt_trans hdiv ha
+
+theorem mul_correct {a b : Nat} (ha : a < modulus) (hb : b < modulus) :
+    mul a b = (a * b) % modulus := by
+  unfold mul
+  have hdecomp : (a * b) / base * base + (a * b) % base = a * b := by
+    rw [Nat.mul_comm]
+    exact Nat.div_add_mod _ _
+  calc
+    reduce128 ((a * b) / base) ((a * b) % base) =
+        ((a * b) / base * base + (a * b) % base) % modulus :=
+      reduce128_correct (productHigh_lt ha hb) (Nat.mod_lt _ (by decide))
+    _ = (a * b) % modulus := by rw [hdecomp]
+
+theorem add_nonvacuous : add 3 5 = 8 := by decide
+theorem sub_nonvacuous : sub 3 5 = modulus - 2 := by decide
+theorem reduce128_nonvacuous : reduce128 1 2 = epsilon + 2 := by decide
+theorem mul_nonvacuous : mul 3 5 = 15 := by decide
+
+end Word
+
+namespace Field
+
+/-- Natural machine-word representative of a canonical field element. -/
+def toWord (a : Field) : Nat := a.value.toNat
+
+/-- Reinterpret a natural word in the canonical field. -/
+def ofWord (x : Nat) : Field := ofInt (x : Int)
+
+theorem ofWord_toWord (a : Field) : ofWord (toWord a) = a := by
+  apply Field.ext
+  simp [ofWord, Field.ofInt, toWord, Int.toNat_of_nonneg a.nonneg,
+    Int.emod_eq_of_lt a.nonneg a.lt]
+
+theorem toWord_lt_modulus (a : Field) : toWord a < Word.modulus := by
+  apply (Int.toNat_lt a.nonneg).2
+  simpa [Word.modulus, modulus] using a.lt
+
+theorem ofWord_mod (x : Nat) : ofWord (x % Word.modulus) = ofWord x := by
+  apply Field.ext
+  simp [ofWord, Field.ofInt, Word.modulus, modulus]
+
+/-- CUDA addition implements the canonical field addition already used by the
+fold and launch proofs. -/
+theorem word_add_correct (a b : Field) :
+    ofWord (Word.add (toWord a) (toWord b)) = Field.add a b := by
+  rw [Word.add_correct (toWord_lt_modulus a) (toWord_lt_modulus b), ofWord_mod]
+  apply Field.ext
+  simp [ofWord, Field.ofInt, Field.add, toWord,
+    Int.toNat_of_nonneg a.nonneg, Int.toNat_of_nonneg b.nonneg]
+
+/-- CUDA subtraction implements canonical field subtraction. -/
+theorem word_sub_correct (a b : Field) :
+    ofWord (Word.sub (toWord a) (toWord b)) = Field.sub a b := by
+  rw [Word.sub_correct (toWord_lt_modulus a) (toWord_lt_modulus b), ofWord_mod]
+  apply Field.ext
+  have hb_le : toWord b ≤ toWord a + Word.modulus := by
+    have hb := toWord_lt_modulus b
+    omega
+  simp only [ofWord, Field.ofInt, Field.sub]
+  rw [Int.ofNat_sub hb_le]
+  simp [toWord, Word.modulus, modulus,
+    Int.toNat_of_nonneg a.nonneg, Int.toNat_of_nonneg b.nonneg, Int.sub_emod]
+
+/-- The exact 128-bit reduction implements canonical field multiplication. -/
+theorem word_mul_correct (a b : Field) :
+    ofWord (Word.mul (toWord a) (toWord b)) = Field.mul a b := by
+  rw [Word.mul_correct (toWord_lt_modulus a) (toWord_lt_modulus b), ofWord_mod]
+  apply Field.ext
+  simp [ofWord, Field.ofInt, Field.mul, toWord,
+    Int.toNat_of_nonneg a.nonneg, Int.toNat_of_nonneg b.nonneg]
+
+end Field
+
 /-- The fixed kernel's public launch parameters and initialized input. -/
 structure Launch where
   input : Array FieldExt
@@ -332,6 +650,13 @@ theorem exampleLaunch_valid : exampleLaunch.Valid := by
 theorem runThread_nonvacuous : Launch.runThread exampleLaunch 0 ≠ some FieldExt.zero := by
   decide
 
+#print axioms Word.add_correct
+#print axioms Word.sub_correct
+#print axioms Word.reduce128_correct
+#print axioms Word.mul_correct
+#print axioms Field.word_add_correct
+#print axioms Field.word_sub_correct
+#print axioms Field.word_mul_correct
 #print axioms FieldExt.foldFused_correct
 #print axioms FieldExt.foldFused_nonvacuous
 #print axioms Launch.oneIndex_lt_twice_output

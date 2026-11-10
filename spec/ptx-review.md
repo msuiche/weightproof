@@ -122,13 +122,16 @@ Goldilocks/cubic-extension counterparts. `Kernel.Launch` additionally models the
 fixed kernel's guards and source-level index arithmetic: every active thread's
 two checked loads are proved in bounds, `runThread_correct` proves its output
 against the independent reference fold, inactive threads perform no load/store,
-and a concrete valid launch proves non-vacuity. Lean reports no `sorryAx` or
-user-added axioms for these theorems. This is a self-contained source-level
-model, not a PTX memory-model proof: SF Tensor has published its paper but not
-its Lean implementation, so no direct reuse is claimed. The CUDA `add`, `sub`,
-and 128-bit `reduce128` machine-word implementations, compiler lowering, and
-hardware remain covered by the reviewed guards and differential evidence above.
-Mechanizing those layers requires an available PTX model or a separate exact
-machine-word development. Scaling to the 8B serving model and eliminating
-per-fold allocation/copies are separate performance work, not correctness
-assumptions.
+and a concrete valid launch proves non-vacuity. `Kernel.Word` additionally models
+the unsigned wrapping operations and proves `add_correct`, `sub_correct`,
+`reduce128_correct`, and `mul_correct` against canonical modular arithmetic;
+`Field.word_add_correct`, `Field.word_sub_correct`, and `Field.word_mul_correct`
+connect those results directly to the field operations used by the fold proof.
+Lean reports no `sorryAx` or user-added axioms for these theorems. This is a
+self-contained source-level field/index/machine-word model, not a PTX
+memory-model proof: SF Tensor has published its paper but not its Lean
+implementation, so no direct reuse is claimed. Compiler lowering and hardware
+remain covered by the reviewed guards and differential evidence above.
+Mechanizing those layers requires an available PTX model. Scaling to the 8B
+serving model and eliminating per-fold allocation/copies are separate
+performance work, not correctness assumptions.

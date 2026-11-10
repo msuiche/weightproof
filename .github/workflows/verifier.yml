@@ -70,7 +70,7 @@ jobs:
           test: false
           lint: false
           use-mathlib-cache: false
-      - name: Check fused fold correctness and non-vacuity
+      - name: Check CUDA field, word, launch, and fold proofs
         run: lean formal/GpuFold.lean
 
   fuzz:
