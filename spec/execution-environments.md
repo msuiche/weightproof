@@ -97,6 +97,20 @@ implementation. The 7.78/5.80 ms persistent-device context remains the accepted
 baseline. Further work should profile stream/copy latency before trying more
 host-layout changes.
 
+### Larger model/window benchmark
+
+`block-4-layer-f8-window8` uses four transformer layers, feed-forward width 8,
+an eight-token maximum window, and a four-token input. It is a scaling fixture,
+not an 8B model. Every run validates the proof before measuring. Results:
+
+| Backend | Prove | Verify |
+|---|---:|---:|
+| Local Rust | 4.59 ms | 4.86 ms |
+| GB10 native CUDA | 21.80 ms | 15.95 ms |
+
+No 8B weight fixture or loader exists in this repository, so these numbers are
+not presented as 8B results.
+
 ## Formal and PTX evidence
 
 `formal/GpuFold.lean` proves the fused cubic-extension fold and multilinear

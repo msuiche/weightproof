@@ -270,7 +270,9 @@ and **6.26 ms** after pairing both witness vectors into one fold per round;
 unpaired folds took 14.73 ms and 9.26 ms. Native CUDA on the GB10 takes
 **7.78 ms proving** and **5.80 ms verification** with persistent per-thread
 buffers and streams, down from 9.76 ms and 7.74 ms with per-fold allocation.
-CI runs the same benchmark with a short
+The valid four-layer/feed-forward-8/window-8 scaling fixture takes 4.59 ms/4.86 ms
+on local Rust and 21.80 ms/15.95 ms on native CUDA (prove/verify). It is not an
+8B result; no 8B fixture or loader is present. CI runs the same benchmark with a short
 sample, including two-layer and two-request cases.
 
 ## 11. M2 kernel lane

@@ -9,6 +9,7 @@
 - Run protocol-exact Goldilocks and cubic-extension folds through ICICLE CPU or a native NVCC CUDA backend, with Lean correctness and non-vacuity proofs.
 - Execute the complete 134-test suite on an NVIDIA GB10 and generate `sm_121` PTX.
 - Reuse per-thread CUDA buffers and streams to reduce small-model block proving to 7.78 ms and verification to 5.80 ms while preserving byte-identical proofs.
+- Measure four-layer, feed-forward-width-8, eight-token-window proofs on Rust and native CUDA without labeling the fixture as an 8B model.
 - Document local, CPU-backend, and DGX CUDA execution environments, verification commands, performance baselines, and PTX safety evidence.
 
 ### Infrastructure
