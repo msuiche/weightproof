@@ -101,6 +101,26 @@ pub fn fold_output(
     let h = layout.h;
     let mut c = row.c;
     c.fix_low(&gamma, k, eps);
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some()
+        && layout.members.len() == 1
+        && layout.members[0] == 35
+    {
+        eprintln!("RUST_FOLD_TENSORS count={}", c.tensors.len());
+        for (index, tensor) in c.tensors.iter().take(12).enumerate() {
+            eprintln!(
+                "RUST_FOLD_TENSOR index={} scalar={:016x} at0={:016x} at1={:016x}",
+                index,
+                tensor.scalar.0[0],
+                tensor.at(0).0[0],
+                tensor.at(1).0[0]
+            );
+        }
+        eprintln!(
+            "RUST_FOLD_ENTRIES {:?}",
+            &c.entries[..c.entries.len().min(12)]
+        );
+    }
     let kept_factor = gamma
         .iter()
         .fold(eps, |factor, &challenge| factor * (E::ONE - challenge));
@@ -135,6 +155,23 @@ pub fn fold_output(
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {
         eprintln!("RUST_FOLD_TARGET {:016x}", claim.0[0]);
+        if !out.layout.members.is_empty() {
+            eprintln!(
+                "RUST_FOLD_FORM16 {:?}",
+                (0..16)
+                    .map(|index| out.c.at(index).0[0])
+                    .collect::<Vec<_>>()
+            );
+            let vars = out
+                .c
+                .tensors
+                .iter()
+                .map(|tensor| tensor.vars())
+                .max()
+                .unwrap_or(0);
+            let point = vec![E::ONE + E::ONE; vars as usize];
+            eprintln!("RUST_FOLD_COEF hash={:016x}", out.c.mle(&point).0[0]);
+        }
     }
     out
 }
@@ -168,8 +205,17 @@ pub fn single_rows_symbols(rows: &SingleRows, opened: &Opened, positions: usize)
         }
         let folded_main = fold_low(main, &rows.gamma);
         #[cfg(feature = "std")]
-        if std::env::var_os("DUMP_SHARED").is_some() && layout.k == 4 && layout.members.len() == 1 && i == 0 {
-            eprintln!("RUST_SHARED_SYMBOL main0={:016x} main1={:016x} y={:016x}", opened.of[0][i].main[0].0[0], opened.of[0][i].main.get(1).map_or(E::ZERO, |x| *x).0[0], folded_main[0].0[0]);
+        if std::env::var_os("DUMP_SHARED").is_some()
+            && layout.k == 4
+            && layout.members.len() == 1
+            && i == 0
+        {
+            eprintln!(
+                "RUST_SHARED_SYMBOL main0={:016x} main1={:016x} y={:016x}",
+                opened.of[0][i].main[0].0[0],
+                opened.of[0][i].main.get(1).map_or(E::ZERO, |x| *x).0[0],
+                folded_main[0].0[0]
+            );
         }
         out.push(folded_main[0]);
         for (w, _) in layout.members.iter().enumerate() {
@@ -184,8 +230,15 @@ pub fn single_rows_symbols(rows: &SingleRows, opened: &Opened, positions: usize)
             let fresh = &opened.of[layout.members.len()][i].mask;
             let folded_fresh = fold_low(fresh.clone(), &rows.gamma[..layout.h as usize]);
             #[cfg(feature = "std")]
-            if std::env::var_os("DUMP_SHARED").is_some() && layout.k == 4 && layout.members.len() == 1 && i == 0 {
-                eprintln!("RUST_FRESH_SYMBOL mask0={:016x} y={:016x}", fresh[0].0[0], folded_fresh[0].0[0]);
+            if std::env::var_os("DUMP_SHARED").is_some()
+                && layout.k == 4
+                && layout.members.len() == 1
+                && i == 0
+            {
+                eprintln!(
+                    "RUST_FRESH_SYMBOL mask0={:016x} y={:016x}",
+                    fresh[0].0[0], folded_fresh[0].0[0]
+                );
             }
             out.push(folded_fresh[0]);
         }
@@ -541,18 +594,30 @@ pub fn switch_rows(
 
     let mut out = Vec::new();
     let mut old = Row::default();
-    old.add_form(
-        oracle,
-        switch_lift(
-            rows.c.clone(),
-            log_ell(code),
-            target.main,
-            row_bits,
-            table_bits,
-        ),
+    let lifted = switch_lift(
+        rows.c.clone(),
+        log_ell(code),
+        target.main,
+        row_bits,
+        table_bits,
     );
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        let point = vec![E::ONE + E::ONE; table_bits as usize];
+        eprintln!(
+            "RUST_SWITCH_OLD_COEF hash={:016x} vars={} row_bits={} above={}",
+            lifted.mle(&point).0[0],
+            log_ell(code),
+            row_bits,
+            row_bits - target.main.bits
+        );
+    }
+    old.add_form(oracle, lifted);
     for f in &rows.kept {
-        let i = kept.iter().position(|&o| o == f.oracle).expect("CS: the claim reads a kept member that the group does not have");
+        let i = kept
+            .iter()
+            .position(|&o| o == f.oracle)
+            .expect("CS: the claim reads a kept member that the group does not have");
         switch_add_kept(
             &mut old,
             &pads[i],
@@ -576,7 +641,10 @@ pub fn switch_rows(
     old.target = rows.target;
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {
-        eprintln!("RUST_SHARED_CS_OLD target={:016x}", old.target.0[0]);
+        eprintln!(
+            "RUST_SWITCH_CUT target={:016x} bits={} first_row={} table_bits={}",
+            old.target.0[0], target.main.bits, target.main.first_row, table_bits
+        );
     }
     out.push(old);
     for (i, &old_oracle) in kept.iter().enumerate() {
@@ -698,7 +766,11 @@ pub fn switch_rows(
             switch_add_rest_base(&mut row, oracle, target.rest.part, &mask_tail[j], &tail);
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() {
-                eprintln!("RUST_SHARED_CS_GEN row={} target={:016x}", rows.mask_row(j as u32), row.target.0[0]);
+                eprintln!(
+                    "RUST_SHARED_CS_GEN row={} target={:016x}",
+                    rows.mask_row(j as u32),
+                    row.target.0[0]
+                );
             }
             out.push(row);
         }
@@ -716,7 +788,12 @@ pub fn last_rows(
     row.c.fix_low(&[E::ZERO], 1, E::ONE);
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() && row.target.0[0] == 0x89044890d677c990 {
-        eprintln!("RUST_LAST_ROWS c0={:016x} c2={:016x} c42={:016x}", row.c.at(0).0[0], row.c.at(2).0[0], row.c.at(42).0[0]);
+        eprintln!(
+            "RUST_LAST_ROWS c0={:016x} c2={:016x} c42={:016x}",
+            row.c.at(0).0[0],
+            row.c.at(2).0[0],
+            row.c.at(42).0[0]
+        );
     }
     layout.k = 0;
     let kept_rows = layout

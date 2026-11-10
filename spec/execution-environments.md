@@ -1,0 +1,96 @@
+# Execution environments
+
+## Why CUDA runs on `dgx1`
+
+The development laptop is an Apple Silicon Mac. It has no NVIDIA GPU and current
+CUDA toolkits do not support macOS, so installing NVCC locally would neither run
+CUDA kernels nor validate GPU memory behavior. ICICLE CPU, Rust, Lean, no-std,
+fuzzing, and default benchmarks run locally.
+
+CUDA acceptance runs on the already-configured `dgx1` SSH host:
+
+- Ubuntu 24.04.5 LTS, aarch64
+- NVIDIA GB10, driver 580.178.04
+- NVCC 13.0.88 at `/usr/local/cuda/bin/nvcc`
+- Rust/Cargo under `~/.cargo/bin`
+
+No packages were installed. The only PATH addition required is
+`PATH=/usr/local/cuda/bin:$HOME/.cargo/bin:$PATH`.
+
+## Backend selection
+
+| Configuration | Where it runs | Purpose |
+|---|---|---|
+| default | laptop or Linux CPU | Rust verifier and multilinear prover |
+| `icicle-prover` | laptop or Linux CPU | ICICLE Goldilocks differential tests and CPU baseline |
+| `native-cuda` | `dgx1` GB10 | Fixed NVCC kernel, full proofs, PTX generation |
+
+ICICLE remains the evaluated CPU backend. Its CUDA source repository is not
+publicly available and its release binaries target x86 Linux, while `dgx1` is
+aarch64. `native-cuda` therefore builds `cuda/fold.cu` directly with NVCC through
+`build.rs`. Unsafe Rust is confined to `src/fp/native_cuda.rs`; the rest of the
+crate retains `#![deny(unsafe_code)]`.
+
+## Source and fixture synchronization
+
+The laptop checkout is the source of truth. Do not copy `target/` build artifacts
+between different architectures. Required test fixtures are embedded with
+`include_bytes!`, so `spikes/plans` and the accepted-proof fixture directory must
+also be present for `cargo test`.
+
+```bash
+rsync -az --exclude .git --exclude target ./ dgx1:/home/msuiche/weightproof/
+rsync -az spikes/plans dgx1:/home/msuiche/weightproof/spikes/
+rsync -az spikes/flashprove/examples/accepted-proof \
+  dgx1:/home/msuiche/weightproof/spikes/flashprove/examples/
+```
+
+The full FlashProve checkout is not required for the Rust unit tests. Ground-truth
+accepted and mutated request proofs are exercised from these fixture files.
+
+## Verification commands
+
+Local:
+
+```bash
+cargo test --locked
+cargo test --locked --features icicle-prover
+cargo check --locked --no-default-features --target thumbv7em-none-eabi
+~/.elan/toolchains/leanprover--lean4---v4.34.1/bin/lean formal/GpuFold.lean
+```
+
+On `dgx1`:
+
+```bash
+cd /home/msuiche/weightproof
+export PATH=/usr/local/cuda/bin:$HOME/.cargo/bin:$PATH
+make -C cuda check
+cargo test --locked --features native-cuda
+cargo bench --locked --features native-cuda --bench block_proof -- \
+  --sample-size 10 --measurement-time 1 --warm-up-time 0.1
+```
+
+`make -C cuda check` builds `target/cuda/fold` and `target/cuda/fold.ptx`, then
+checks 512 outputs at each stride 1 through 512 against independent full-precision
+128-bit host arithmetic. NVCC targets `sm_121` on this machine.
+
+## Verified native-CUDA results (2026-11-09)
+
+- 134 tests pass: 127 unit tests and 7 ground-truth integration tests.
+- The suite includes real quadratic multilinear block proving, accepted proofs,
+  statement mutations, and request-proof rejection.
+- Native CUDA and default Rust produce byte-identical multilinear proofs with
+  SHA-256 `04d95d7500f779145f1018a711496f318d1baa257b5ebada780640a0ea92c7ea`.
+- Pre-persistent baseline: 9.76 ms proving and 7.74 ms verification for the
+  small-model block. Persistent per-thread buffers and streams reduce this to
+  **7.78 ms proving** and **5.80 ms verification** (−20.3% and −25.1%).
+  The persistent implementation passes the same 134 tests and preserves the
+  byte-identical proof digest above.
+
+## Formal and PTX evidence
+
+`formal/GpuFold.lean` proves the fused cubic-extension fold and multilinear
+quadratic-round identities without `sorry` or user-added axioms.
+`spec/ptx-review.md` records the fixed kernel's launch bounds, termination,
+UB-freedom guards, and stream synchronization evidence. It also distinguishes
+that reviewed evidence from a future mechanized proof in SF Tensor's PTX model.

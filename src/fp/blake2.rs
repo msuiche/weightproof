@@ -5,6 +5,7 @@
 //! Own implementation (no_std) so Start semantics match exactly.
 
 use crate::fp::digest::Digest;
+use alloc::vec::Vec;
 
 /// Start: salt and personalization as eight u32 words; zeros when absent.
 pub type Start = [u32; 8];
@@ -94,6 +95,43 @@ fn compress(h: &mut [u64; 8], m: &[u64; 16], t_low: u64, t_high: u64, last: bool
     for i in 0..8 {
         h[i] ^= v[i] ^ v[i + 8];
     }
+}
+
+/// Digest a public table as little-endian `u32` words. This is unkeyed
+/// BLAKE2b-512 without a label prefix; every compression call uses
+/// `t_high = 72 + 2^32 * word_count`. The first 32 output bytes are returned.
+pub fn public_table_digest(words: &[u32]) -> Digest {
+    let mut bytes = Vec::with_capacity(words.len() * 4);
+    for word in words {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    let mut h = begin(&[0; 8], 64);
+    let high = 72u64 + ((words.len() as u64) << 32);
+    let mut offset = 0usize;
+    let mut low = 0u64;
+    while bytes.len() - offset > 128 {
+        let mut message = [0u64; 16];
+        for (i, chunk) in bytes[offset..offset + 128].chunks_exact(8).enumerate() {
+            message[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+        }
+        low += 128;
+        compress(&mut h, &message, low, high, false);
+        offset += 128;
+    }
+    let mut final_block = [0u8; 128];
+    let remaining = bytes.len() - offset;
+    final_block[..remaining].copy_from_slice(&bytes[offset..]);
+    let mut message = [0u64; 16];
+    for (i, chunk) in final_block.chunks_exact(8).enumerate() {
+        message[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+    }
+    low += remaining as u64;
+    compress(&mut h, &message, low, high, true);
+    let mut output = [0u8; 32];
+    for (i, word) in h[..4].iter().enumerate() {
+        output[i * 8..i * 8 + 8].copy_from_slice(&word.to_le_bytes());
+    }
+    Digest::from_le_bytes(&output)
 }
 
 /// One BLAKE2b computation with the label prefix and Start.

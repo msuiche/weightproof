@@ -149,7 +149,10 @@ impl Chain {
         if first[0].trailing_zeros() < work_bits {
             #[cfg(feature = "std")]
             if kind == ChainKind::Positions {
-                eprintln!("RUST_WORK nonce={} bits={} rho={:08x} round={} message={:?} first={:016x}", nonce, work_bits, self.rho.0[0], self.round, message, first[0]);
+                eprintln!(
+                    "RUST_WORK nonce={} bits={} rho={:08x} round={} message={:?} first={:016x}",
+                    nonce, work_bits, self.rho.0[0], self.round, message, first[0]
+                );
             }
             return false;
         }
@@ -174,7 +177,19 @@ impl Chain {
         self.next = if work_bits == 0 { 4 } else { 8 };
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_RHO").is_some() {
-            eprintln!("RUST_RHO label={} round={} rho={:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}", self.label, self.round - 1, self.rho.0[0], self.rho.0[1], self.rho.0[2], self.rho.0[3], self.rho.0[4], self.rho.0[5], self.rho.0[6], self.rho.0[7]);
+            eprintln!(
+                "RUST_RHO label={} round={} rho={:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}",
+                self.label,
+                self.round - 1,
+                self.rho.0[0],
+                self.rho.0[1],
+                self.rho.0[2],
+                self.rho.0[3],
+                self.rho.0[4],
+                self.rho.0[5],
+                self.rho.0[6],
+                self.rho.0[7]
+            );
         }
         true
     }
@@ -191,7 +206,12 @@ impl Chain {
         self.next += 1;
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() && self.round > 100 {
-            eprintln!("RUST_WORD round={} next={} value={:016x}", self.round, self.next - 1, w);
+            eprintln!(
+                "RUST_WORD round={} next={} value={:016x}",
+                self.round,
+                self.next - 1,
+                w
+            );
         }
         w
     }

@@ -9,7 +9,7 @@ use crate::fp::{
     error::FpError,
     field::{ExtensionElement as E, FieldElement as F},
     forest::{self, Forest, ProductLevel},
-    layer::{HFun, LayerFixture, LayerRun, Tables, TMat},
+    layer::{HFun, LayerFixture, LayerRun, TMat, Tables},
     layer_checks::{led_lines5, Row5, WeightMerge},
     model::{self, psc_row, Aff, HFork, HStack, RoundName, TokenSumcheckState, Tr},
     subproof::HeadRounds,
@@ -76,9 +76,19 @@ fn seg(name: &str, n: u64) -> crate::fp::layer::Seg {
 
 fn calls() -> Vec<crate::fp::layer::CallD> {
     vec![
-        crate::fp::layer::CallD::new_with_floor("R16a", "R16", vec![seg("NF", 512), seg("NFH", 512), seg("HD0", 512)], 14),
+        crate::fp::layer::CallD::new_with_floor(
+            "R16a",
+            "R16",
+            vec![seg("NF", 512), seg("NFH", 512), seg("HD0", 512)],
+            14,
+        ),
         crate::fp::layer::CallD::new_with_floor("R16b", "R16", vec![seg("HD1", 512)], 14),
-        crate::fp::layer::CallD::new_with_floor("R8", "R8", vec![seg("ROW", 120), seg("HD2", 512)], 14),
+        crate::fp::layer::CallD::new_with_floor(
+            "R8",
+            "R8",
+            vec![seg("ROW", 120), seg("HD2", 512)],
+            14,
+        ),
         crate::fp::layer::CallD::new_with_floor("FEa", "FE", vec![seg("HE0", 256)], 14),
         crate::fp::layer::CallD::new_with_floor("FEb", "FE", vec![seg("HE1", 256)], 14),
         crate::fp::layer::CallD::new_with_floor("FC", "FC", vec![seg("CNF", 512)], 14),
@@ -181,7 +191,9 @@ impl HeadRun {
             .iter()
             .enumerate()
             .filter(|(_, on)| **on)
-            .fold(E::ZERO, |acc, (t, _)| acc + et[t] * pre[self.win[t] as usize])
+            .fold(E::ZERO, |acc, (t, _)| {
+                acc + et[t] * pre[self.win[t] as usize]
+            })
     }
 
     fn row5_at(&self, point: &str, i: u64) -> Result<Row5, FpError> {
@@ -207,9 +219,17 @@ impl HeadRun {
             c,
             v_lo: dig(0, 6),
             v_hi: dig(6, 4),
-            a: dig(58, 1).scaled(pw(1)) + dig(59, 1) + dig(60, 1).scaled(pw(8)) + dig(61, 1).scaled(pw(16)),
+            a: dig(58, 1).scaled(pw(1))
+                + dig(59, 1)
+                + dig(60, 1).scaled(pw(8))
+                + dig(61, 1).scaled(pw(16)),
             b: dig(62, 1) + dig(63, 1).scaled(pw(8)),
-            sig: dig(58, 1).scaled(pw(1)) + dig(59, 1) + dig(60, 1).scaled(pw(8)) + dig(61, 1).scaled(pw(16)) + dig(62, 1).scaled(pw(24)) + dig(63, 1).scaled(pw(32)),
+            sig: dig(58, 1).scaled(pw(1))
+                + dig(59, 1)
+                + dig(60, 1).scaled(pw(8))
+                + dig(61, 1).scaled(pw(16))
+                + dig(62, 1).scaled(pw(24))
+                + dig(63, 1).scaled(pw(32)),
             s0: dig(59, 1),
             l1: dig(64, 5),
             h1: dig(69, 5),
@@ -244,7 +264,10 @@ impl HeadRun {
         let mut out = Aff::default();
         for (xh, &weight) in wh.iter().enumerate() {
             for l in 0..nl {
-                out.add(&self.u3at(t, (off + l * j) / S2 + xh as u64)?, weight * pw(8 * l as u32));
+                out.add(
+                    &self.u3at(t, (off + l * j) / S2 + xh as u64)?,
+                    weight * pw(8 * l as u32),
+                );
             }
         }
         Ok(out)
@@ -266,15 +289,20 @@ impl HeadRun {
         let ew = self.ew_of(segment);
         let w = sum(&ew);
         match segment {
-            "NF" => Ok(Aff::constant(w * (pw(29) - pw(16) * E::from_base(F(32896))))
-                - self.sl(segment, O_A_W, 2, D)?.scaled(pw(30))
-                - self.sl(segment, O_RA, 2, D)?.scaled(pw(16))),
-            "NFH" => Ok((Aff::constant(E::from_base(F(32896)) * w) + self.sl(segment, O_RA, 2, D)?).scaled(pw(2))),
+            "NF" => Ok(
+                Aff::constant(w * (pw(29) - pw(16) * E::from_base(F(32896))))
+                    - self.sl(segment, O_A_W, 2, D)?.scaled(pw(30))
+                    - self.sl(segment, O_RA, 2, D)?.scaled(pw(16)),
+            ),
+            "NFH" => Ok((Aff::constant(E::from_base(F(32896)) * w)
+                + self.sl(segment, O_RA, 2, D)?)
+            .scaled(pw(2))),
             "HD0" | "HD1" | "HD2" => {
                 let wx = sum(&ew);
                 let w_r = wx * self.on_sum(self.zt(self.call_index(segment)));
                 if segment == "HD1" {
-                    return Ok(Aff::constant(E::from_base(F(32896)) * w_r) + self.sl(segment, O_D1, 2, JV)?);
+                    return Ok(Aff::constant(E::from_base(F(32896)) * w_r)
+                        + self.sl(segment, O_D1, 2, JV)?);
                 }
                 if segment == "HD2" {
                     return Ok(Aff::constant(pw(7) * w_r) + self.sl(segment, O_D2, 1, JV)?);
@@ -282,20 +310,30 @@ impl HeadRun {
                 let et = eq_top(self.zt(self.call_index("HD0")));
                 let iw = pw(23).inverse();
                 Ok((Aff::slot(self.t_h.s_cl).scaled(pw(9))
-                    + (self.gap_at("phiC", 0, self.erc)? + self.gap_at("phiC", 1, self.erc)?.scaled(E::from_base(F(BIGH))))
-                        .scaled(wx)
+                    + (self.gap_at("phiC", 0, self.erc)?
+                        + self
+                            .gap_at("phiC", 1, self.erc)?
+                            .scaled(E::from_base(F(BIGH))))
+                    .scaled(wx)
                     - Aff::constant(self.place_term(&ew, &et))
-                    - (Aff::constant(E::from_base(F(32896)) * w_r) + self.sl(segment, O_D1, 2, JV)?).scaled(pw(8))
+                    - (Aff::constant(E::from_base(F(32896)) * w_r)
+                        + self.sl(segment, O_D1, 2, JV)?)
+                    .scaled(pw(8))
                     - (Aff::constant(pw(7) * w_r) + self.sl(segment, O_D2, 1, JV)?))
-                    .scaled(iw))
+                .scaled(iw))
             }
             "HE0" | "HE1" => {
                 let v0 = if segment == "HE1" { JVA } else { 0 };
-                let wx = ew.iter().take((JV - v0) as usize).fold(E::ZERO, |acc, &value| acc + value);
+                let wx = ew
+                    .iter()
+                    .take((JV - v0) as usize)
+                    .fold(E::ZERO, |acc, &value| acc + value);
                 let off_e = E::from_base(F(128 * (((1u64 << (8 * EXC)) - 1) / 255) + 1));
-                Ok(Aff::constant(E::from_base(F(32896)) * wx * self.on_sum(self.zt(self.call_index(segment))))
-                    + self.sl(segment, O_D1 + v0, 2, JV)?
-                    + (Aff::constant(w * off_e) + self.sl(segment, O_E + v0, EXC, JV)?).scaled(pw(16)))
+                Ok(Aff::constant(
+                    E::from_base(F(32896)) * wx * self.on_sum(self.zt(self.call_index(segment))),
+                ) + self.sl(segment, O_D1 + v0, 2, JV)?
+                    + (Aff::constant(w * off_e) + self.sl(segment, O_E + v0, EXC, JV)?)
+                        .scaled(pw(16)))
             }
             "ROW" => {
                 let t = self.table_at("hr@zt_ROW")?;
@@ -314,7 +352,10 @@ impl HeadRun {
                     } else {
                         1
                     };
-                    out.add(&(self.u3at(t, idx as u64)? + Aff::constant(pw(7))), weight * E::from_base(F(mu)));
+                    out.add(
+                        &(self.u3at(t, idx as u64)? + Aff::constant(pw(7))),
+                        weight * E::from_base(F(mu)),
+                    );
                 }
                 Ok(out)
             }
@@ -324,7 +365,9 @@ impl HeadRun {
                 for x in 0..D {
                     b.add(&self.sh2(t, x)?, ew[x as usize]);
                 }
-                Ok(self.sl(segment, O_A_W, 2, D)? + b.scaled(pw(28)) + Aff::constant(w * pw(15) + w * pw(39)))
+                Ok(self.sl(segment, O_A_W, 2, D)?
+                    + b.scaled(pw(28))
+                    + Aff::constant(w * pw(15) + w * pw(39)))
             }
             _ => unreachable!(),
         }
@@ -345,33 +388,48 @@ impl HeadRun {
                         context: "head-join-place",
                     });
                 }
-                weighed[position as usize] = if entries && v0 + x as u64 >= 512 { 2 } else { 1 };
+                weighed[position as usize] = if entries && v0 + x as u64 >= 512 {
+                    2
+                } else {
+                    1
+                };
             }
         }
         let mut pad_w = E::ZERO;
         #[cfg(feature = "std")]
         {
-            let (n0, n1, n2) = weighed.iter().fold((0usize, 0usize, 0usize), |(a, b, c), &x| {
-                match x {
-                    0 => (a + 1, b, c),
-                    1 => (a, b + 1, c),
-                    _ => (a, b, c + 1),
-                }
-            });
-            eprintln!("RUST_USED q={} used0={} used1={} used2={} j={}", q, n0, n1, n2, weighed.len());
+            let (n0, n1, n2) =
+                weighed
+                    .iter()
+                    .fold((0usize, 0usize, 0usize), |(a, b, c), &x| match x {
+                        0 => (a + 1, b, c),
+                        1 => (a, b + 1, c),
+                        _ => (a, b, c + 1),
+                    });
+            eprintln!(
+                "RUST_USED q={} used0={} used1={} used2={} j={}",
+                q,
+                n0,
+                n1,
+                n2,
+                weighed.len()
+            );
         }
         for (j, &weight) in e.iter().enumerate() {
             if weighed[j] == 0 {
                 pad_w += weight;
             }
             if weighed[j] != 1 {
-                let at = (self.run.forest.first[q] as usize + (j >> (self.run.forest.d_t - 6)) as usize) as usize;
+                let at = (self.run.forest.first[q] as usize
+                    + (j >> (self.run.forest.d_t - 6)) as usize) as usize;
                 if at < laid.len() {
                     laid[at] += T;
                 }
             }
         }
-        let mut out = Aff::constant(pad_w * self.run.forest.calls[q].tau_at(self.run.forest.calls[q].t0)) + lines;
+        let mut out =
+            Aff::constant(pad_w * self.run.forest.calls[q].tau_at(self.run.forest.calls[q].t0))
+                + lines;
         if q == self.call_index("NF") {
             out = out + Aff::slot(self.t_n.s_cl);
         }
@@ -381,7 +439,12 @@ impl HeadRun {
     fn forest_join(&self, keys: &[Aff]) -> Aff {
         let mut out = Aff::default();
         for (q, key) in keys.iter().enumerate() {
-            out.add(&(Aff::constant(self.run.forest.alpha - self.run.forest.theta * E::from_base(F(q as u64))) - key.clone()), self.run.forest.e[q]);
+            out.add(
+                &(Aff::constant(
+                    self.run.forest.alpha - self.run.forest.theta * E::from_base(F(q as u64)),
+                ) - key.clone()),
+                self.run.forest.e[q],
+            );
         }
         let ey = eq_top(&self.run.forest.zy[..self.run.forest.r_k as usize]);
         for y in self.run.forest.nt as usize..1usize << self.run.forest.r_k {
@@ -474,7 +537,15 @@ impl HeadRun {
             p: t_h.p.clone(),
         };
         for _ in 0..shape.l_pd {
-            stack.rs.push(model::round_in(f, tr, slot, model::RoundForm::Eq2, &mut t_h.p, half, 0)?);
+            stack.rs.push(model::round_in(
+                f,
+                tr,
+                slot,
+                model::RoundForm::Eq2,
+                &mut t_h.p,
+                half,
+                0,
+            )?);
         }
         stack.rs.reverse();
         stack.p = t_h.p.clone();
@@ -490,7 +561,7 @@ impl HeadRun {
         let zv = last(&wpl.r, LA as usize);
         let yn = {
             let c = &forest.calls[0];
-            let z = &c.zk[..12];
+            let z = &c.zk[..fixture.calls[0].l_j as usize];
             let mut point = z[z.len() - LS as usize..].to_vec();
             point.extend_from_slice(&t_n.r);
             point
@@ -507,25 +578,26 @@ impl HeadRun {
             lengths: BTreeMap::new(),
         };
         let mut position = 0u64;
-        let mut add = |matrix: usize, length: u64, phi: Vec<E>, name: String| -> Result<(), FpError> {
-            let m = &fixture.mats[matrix];
-            let first = position;
-            tables.fun.push(HFun {
-                matrix,
-                l: length,
-                phi,
-                at: position,
-            });
-            position += m.k * (m.m / length);
-            if position == first {
-                return Err(FpError::Range {
-                    context: "head-table-length",
+        let mut add =
+            |matrix: usize, length: u64, phi: Vec<E>, name: String| -> Result<(), FpError> {
+                let m = &fixture.mats[matrix];
+                let first = position;
+                tables.fun.push(HFun {
+                    matrix,
+                    l: length,
+                    phi,
+                    at: position,
                 });
-            }
-            tables.offsets.insert(name.clone(), first);
-            tables.lengths.insert(first, position - first);
-            Ok(())
-        };
+                position += m.k * (m.m / length);
+                if position == first {
+                    return Err(FpError::Range {
+                        context: "head-table-length",
+                    });
+                }
+                tables.offsets.insert(name.clone(), first);
+                tables.lengths.insert(first, position - first);
+                Ok(())
+            };
         add(0, 1 << LA, long_phi(&zl, LS, shape.lt), "hf@Z".into())?;
         let mut phi_c = eq_top(&zt_h[..shape.lt as usize]);
         let mut rho_cv = vec![E::ZERO; T as usize];
@@ -560,8 +632,18 @@ impl HeadRun {
         add(2, T, eq_top(&t_n.r), "hr@rt_N".into())?;
         add(2, T, phi_c, "hr@phiC".into())?;
         add(2, T, rho_cv, "hr@rhoC".into())?;
-        add(3, 1 << 13, forest::forest_phi_b(&forest, 13, 0), "bH-bits-0".into())?;
-        add(3, 1 << 13, forest::forest_phi_b(&forest, 13, 1), "bH-bits-1".into())?;
+        add(
+            3,
+            1 << 13,
+            forest::forest_phi_b(&forest, 13, 0),
+            "bH-bits-0".into(),
+        )?;
+        add(
+            3,
+            1 << 13,
+            forest::forest_phi_b(&forest, 13, 1),
+            "bH-bits-1".into(),
+        )?;
         add(3, 1 << 13, forest::forest_phi_p(13), "bH-pin".into())?;
         if position != fixture.n_u3 {
             return Err(FpError::Range {
@@ -609,7 +691,15 @@ impl HeadRun {
         let mut p = model::psc_begin(f, tr, slot, start)?;
         let mut rm = Vec::with_capacity(11);
         for _ in 0..11 {
-            rm.push(model::round_in(f, tr, slot, model::RoundForm::Sum2, &mut p, E::ZERO, 0)?);
+            rm.push(model::round_in(
+                f,
+                tr,
+                slot,
+                model::RoundForm::Sum2,
+                &mut p,
+                E::ZERO,
+                0,
+            )?);
         }
         let s_fv = model::psc_ends(f, tr, slot, &mut p, 1, 1)?;
         let fvp = f.shown(s_fv)?;
@@ -652,9 +742,16 @@ impl HeadRun {
         }
         let pt: Vec<E> = (0..9).map(|i| self.stack.rs[8 - i]).collect();
         let hv = model::eq_low(&self.stack.rs, 9, 9);
-        let ui = lay.u.iter().position(|unit| unit.x == 13)
+        let ui = lay
+            .u
+            .iter()
+            .position(|unit| unit.x == 13)
             .filter(|&ui| ui + 1 == lay.u.len())
-            .ok_or(FpError::Range { context: "head-claim-unit" })? as u32;
+            .ok_or(FpError::Range {
+                context: "head-claim-unit",
+            })? as u32;
+        #[cfg(feature = "std")]
+        eprintln!("RUST_HEAD_AV av={:?} pt={:?}", &av[..6], &pt);
         let claim = crate::fp::weights::WsClaim {
             ui,
             f: vec![
@@ -663,14 +760,26 @@ impl HeadRun {
                     pt: vec![],
                     av,
                 },
-                crate::fp::weights::WsFac {
-                    hv,
-                    pt,
-                    av: vec![],
-                },
+                crate::fp::weights::WsFac { hv, pt, av: vec![] },
             ],
         };
+        #[cfg(feature = "std")]
+        eprintln!(
+            "RUST_HEAD_CLAIM_AV {:?} scalars={:?}",
+            &claim.f[0].av[..6],
+            claim.f[0]
+                .av
+                .iter()
+                .take(6)
+                .map(|x| x.0[0])
+                .collect::<Vec<_>>()
+        );
         let merged = self.merged.as_mut().unwrap();
+        #[cfg(feature = "std")]
+        eprintln!(
+            "RUST_HEAD_RM {:?}",
+            merged.rm.iter().map(|x| x.0[0]).collect::<Vec<_>>()
+        );
         merged.rec = vec![crate::fp::weights::ws_row_part(
             &lay,
             &claim,
@@ -684,6 +793,7 @@ impl HeadRun {
     }
 
     pub fn add_main_claims(&mut self, f: &mut HFork) -> Result<(), FpError> {
+        crate::fp::layer_checks::LayerCheck::new_head(&mut self.run).init_trees(f);
         for row in &self.run.forest.rows {
             f.lin(row.clone());
         }
@@ -695,7 +805,10 @@ impl HeadRun {
             let mut b = Aff::slot(self.run.wpl.s_l);
             for kh in 0..D / S2 {
                 for limb in 0..5u64 {
-                    b.add(&self.u3at(t, limb * D / S2 + kh)?, -e[kh as usize] * self.run.gp[limb as usize]);
+                    b.add(
+                        &self.u3at(t, limb * D / S2 + kh)?,
+                        -e[kh as usize] * self.run.gp[limb as usize],
+                    );
                 }
             }
             f.lin(b);
@@ -714,9 +827,15 @@ impl HeadRun {
             f.lin(Aff::slot(self.run.t_v.s_end + 3) - r.r_hi);
             let q = self.row5_at("P_V", 0)?;
             for s in 0..9 {
-                f.lin(Aff::slot(self.run.s_w + s as u32) + q.c[s].clone() - q.digits[s].clone() - q.c[s + 1].clone().scaled(pw(8)));
+                f.lin(
+                    Aff::slot(self.run.s_w + s as u32) + q.c[s].clone()
+                        - q.digits[s].clone()
+                        - q.c[s + 1].clone().scaled(pw(8)),
+                );
             }
-            let products: Vec<Aff> = (0..7).map(|j| Aff::slot(self.run.s_pv + j as u32)).collect();
+            let products: Vec<Aff> = (0..7)
+                .map(|j| Aff::slot(self.run.s_pv + j as u32))
+                .collect();
             let two = Aff::constant(pw(44));
             for out in led_lines5(&q, &products, E::ONE, &two) {
                 f.lin(out);
@@ -751,14 +870,25 @@ impl HeadRun {
         }
         f.lin(self.forest_join(&keys));
         let r_c = E::from_base(F(3));
-        f.lin(self.gap_at("rhoC", 0, r_c)? + self.gap_at("rhoC", 1, r_c)?.scaled(E::from_base(F(256))) + self.gap_at("rhoC", 2, r_c)? - Aff::constant(r_c * E::from_base(F(256))));
+        f.lin(
+            self.gap_at("rhoC", 0, r_c)?
+                + self.gap_at("rhoC", 1, r_c)?.scaled(E::from_base(F(256)))
+                + self.gap_at("rhoC", 2, r_c)?
+                - Aff::constant(r_c * E::from_base(F(256))),
+        );
         f.lin(self.gap_at("rhoC", 1, r_c)? + self.gap_at("rhoC", 4, r_c)? - Aff::constant(E::ZERO));
-        f.lin(self.gap_at("phiC", 0, self.erc)? + self.gap_at("phiC", 3, self.erc)? - Aff::constant(self.erc * E::from_base(F(256))));
+        f.lin(
+            self.gap_at("phiC", 0, self.erc)? + self.gap_at("phiC", 3, self.erc)?
+                - Aff::constant(self.erc * E::from_base(F(256))),
+        );
         {
             let te = self.table_at("hf@phiZ")?;
             let off_e = E::from_base(F(128 * (((1u64 << (8 * EXC)) - 1) / 255) + 1));
             let mut a = self.gap_at("phiC", 5, self.erc)?
-                + Aff::constant(self.erc * off_e * E::from_base(F(JV)) - self.erc * E::from_base(F((JV - 512 + 1) << 24)));
+                + Aff::constant(
+                    self.erc * off_e * E::from_base(F(JV))
+                        - self.erc * E::from_base(F((JV - 512 + 1) << 24)),
+                );
             for l in 0..EXC {
                 for xh in 0..JV / S2 {
                     a.add(&self.u3at(te, (O_E + l * JV) / S2 + xh)?, pw(8 * l as u32));
@@ -780,12 +910,18 @@ impl HeadRun {
                     }
                 }
             }
-            let padding = self.run.forest.empty_keys() + self.run.forest.pub_counts.iter().sum::<u64>();
+            let padding =
+                self.run.forest.empty_keys() + self.run.forest.pub_counts.iter().sum::<u64>();
             let mut pin = Aff::constant(-E::from_base(F((1u64 << self.run.forest.v()) - padding)));
             for column in 0..(self.run.forest.calls.len() << w) {
                 pin = pin + self.u3at(t_p, column as u64)?;
             }
-            let plane_row = psc_row(f, &mut self.run.forest.leaves, E::ONE, &at[0].clone().scaled(self.run.forest.leaves_a))?;
+            let plane_row = psc_row(
+                f,
+                &mut self.run.forest.leaves,
+                E::ONE,
+                &at[0].clone().scaled(self.run.forest.leaves_a),
+            )?;
             f.lin(plane_row);
             f.lin(Aff::slot(self.run.forest.s_bit) - at[1].clone());
             f.lin(pin);
@@ -795,8 +931,22 @@ impl HeadRun {
 
     pub fn add_post_smallness_claims(&mut self, f: &mut HFork) -> Result<(), FpError> {
         {
-            let eq = eq_top(&self.stack.rs);
+            let eq = crate::fp::tensor::eq_table(&self.stack.rs);
             let t = self.table_at("hd@r_H")?;
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_POST").is_some() {
+                let direct = crate::fp::tensor::eq_table(&self.stack.rs);
+                eprintln!(
+                    "RUST_ALIN_DIRECT eq={:?}",
+                    direct.iter().take(8).map(|x| x.0[0]).collect::<Vec<_>>()
+                );
+                eprintln!(
+                    "RUST_ALIN t={} rs={:?} eq={:?}",
+                    t,
+                    self.stack.rs.iter().map(|x| x.0[0]).collect::<Vec<_>>(),
+                    eq.iter().take(8).map(|x| x.0[0]).collect::<Vec<_>>()
+                );
+            }
             let mut alin = Aff::default();
             for kk in 0..D {
                 alin.add(&self.sh2(t, kk)?, eq[kk as usize]);
@@ -819,7 +969,12 @@ impl HeadRun {
         crate::fp::weights::pending_row(&crate::fp::weights::ws_lay(), merged, 1, &self.lin)
     }
 
-    pub fn smallness(&mut self, digits: &mut Forest, trits: &[i8], f: &mut HFork) -> Result<(), FpError> {
+    pub fn smallness(
+        &mut self,
+        digits: &mut Forest,
+        trits: &[i8],
+        f: &mut HFork,
+    ) -> Result<(), FpError> {
         let mut check = crate::fp::layer_checks::LayerCheck::new_head(&mut self.run);
         check.smallness(digits, trits, f)?;
         self.vt = check.vt.clone();
@@ -851,7 +1006,11 @@ impl HeadRun {
         ]
     }
 
-    pub fn door_h(&self, link: usize, f: &HFork) -> Result<crate::fp::req_rows::ReqEquation, FpError> {
+    pub fn door_h(
+        &self,
+        link: usize,
+        f: &HFork,
+    ) -> Result<crate::fp::req_rows::ReqEquation, FpError> {
         if f.n_claim != f.plan_claims {
             return Err(FpError::Range {
                 context: "head-claim-count",
@@ -860,7 +1019,12 @@ impl HeadRun {
         let (on_masks, constant) = f.settle()?;
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            eprintln!("RUST_HEAD_DOOR raw={:016x} settled={:016x} target={:016x}", f.c0.0[0], constant.0[0], (-constant).0[0]);
+            eprintln!(
+                "RUST_HEAD_DOOR raw={:016x} settled={:016x} target={:016x}",
+                f.c0.0[0],
+                constant.0[0],
+                (-constant).0[0]
+            );
         }
         let array_of = self.array_of(link);
         let mut equation = crate::fp::req_rows::ReqEquation {
@@ -869,6 +1033,17 @@ impl HeadRun {
             target: -constant,
         };
         for (ti, tree) in f.trees.iter().enumerate() {
+            #[cfg(feature = "std")]
+            if std::env::var_os("DUMP_DOOR").is_some() && ti == 0 {
+                for row in &tree.rows {
+                    let hash = row.l.iter().fold(0u64, |hash, value| hash ^ value.0[0]);
+                    eprintln!(
+                        "RUST_DOOR_ROW_L hash={:016x} first={:016x}",
+                        hash,
+                        row.l.first().map_or(0, |value| value.0[0])
+                    );
+                }
+            }
             let (born, array) = &array_of[ti];
             for row in &tree.rows {
                 if row.coef.len() != tree.r as usize || row.l.len() != tree.k as usize {
@@ -910,7 +1085,10 @@ impl HeadRun {
     }
 }
 
-fn row_weights(tree: &crate::fp::model::HTree, row: &crate::fp::model::HRow) -> Result<crate::fp::req_rows::IndexWeights, FpError> {
+fn row_weights(
+    tree: &crate::fp::model::HTree,
+    row: &crate::fp::model::HRow,
+) -> Result<crate::fp::req_rows::IndexWeights, FpError> {
     let bits = crate::fp::tensor::ceil_log2(tree.r);
     let np = row.row_point.len() as u32;
     let given = !row.row_lo.is_empty() || !row.row_hi.is_empty();
@@ -918,7 +1096,10 @@ fn row_weights(tree: &crate::fp::model::HTree, row: &crate::fp::model::HRow) -> 
         || (row.row_ones || given) && (np != 0 || row.row_first != 0)
         || row.row_first & ((1u64 << np) - 1) != 0
         || row.row_first >= tree.r
-        || given && (row.row_ones || row.row_lo.len() != bits as usize || row.row_hi.len() != bits as usize)
+        || given
+            && (row.row_ones
+                || row.row_lo.len() != bits as usize
+                || row.row_hi.len() != bits as usize)
     {
         return Err(FpError::Range {
             context: "head-row-form",

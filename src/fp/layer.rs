@@ -139,11 +139,17 @@ pub struct LayerFixture {
 
 impl LayerFixture {
     pub fn tensor(&self, name: &str) -> &Ten {
-        self.tensors.iter().find(|tensor| tensor.name == name).unwrap()
+        self.tensors
+            .iter()
+            .find(|tensor| tensor.name == name)
+            .unwrap()
     }
 
     pub fn call(&self, name: &str) -> &CallD {
-        self.calls.iter().find(|call| call.seg(name).is_some()).unwrap()
+        self.calls
+            .iter()
+            .find(|call| call.seg(name).is_some())
+            .unwrap()
     }
 }
 
@@ -206,7 +212,11 @@ fn tensors() -> Vec<Ten> {
 
 fn calls() -> Vec<CallD> {
     vec![
-        CallD::new("R16a", "R16", vec![seg("G", 1024, false), seg("U", 1024, false)]),
+        CallD::new(
+            "R16a",
+            "R16",
+            vec![seg("G", 1024, false), seg("U", 1024, false)],
+        ),
         CallD::new(
             "R16b",
             "R16",
@@ -364,7 +374,18 @@ fn reads_r(segment: &str) -> &'static str {
     }
 }
 
-fn point_lists(calls: &[CallD], _first: bool) -> (Vec<String>, Vec<String>, Vec<String>, Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
+fn point_lists(
+    calls: &[CallD],
+    _first: bool,
+) -> (
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+) {
     let mut z = Vec::new();
     let mut r = Vec::new();
     for call in calls {
@@ -437,10 +458,7 @@ fn point_lists(calls: &[CallD], _first: bool) -> (Vec<String>, Vec<String>, Vec<
     (af, qa, xi, xo, ad, ar, qs)
 }
 
-pub fn build_tables(
-    fixture: &LayerFixture,
-    forest: &Forest,
-) -> Result<Tables, FpError> {
+pub fn build_tables(fixture: &LayerFixture, forest: &Forest) -> Result<Tables, FpError> {
     let (af, qa, xi, xo, ad, ar, qs) = point_lists(&fixture.calls, fixture.first);
     let mut out = Tables {
         fun: vec![],
@@ -449,7 +467,12 @@ pub fn build_tables(
         lengths: BTreeMap::new(),
     };
     let mut position = 0u64;
-    let mut add = |matrix: usize, parts: u64, length: u64, phi: Vec<E>, name: String, later: Option<(String, bool)>| {
+    let mut add = |matrix: usize,
+                   parts: u64,
+                   length: u64,
+                   phi: Vec<E>,
+                   name: String,
+                   later: Option<(String, bool)>| {
         let first = position;
         for q in 0..parts {
             let m = &fixture.mats[matrix + q as usize];
@@ -480,32 +503,102 @@ pub fn build_tables(
     };
     let long = 1u64 << 8;
     for point in af {
-        add(0, 3, long, vec![], format!("af@{point}"), Some((point, true)))?;
+        add(
+            0,
+            3,
+            long,
+            vec![],
+            format!("af@{point}"),
+            Some((point, true)),
+        )?;
     }
     for point in qa {
-        add(6, 1, long, vec![], format!("qa@{point}"), Some((point, true)))?;
+        add(
+            6,
+            1,
+            long,
+            vec![],
+            format!("qa@{point}"),
+            Some((point, true)),
+        )?;
     }
     for point in xi {
-        add(8, 1, long, vec![], format!("xbI@{point}"), Some((point, true)))?;
+        add(
+            8,
+            1,
+            long,
+            vec![],
+            format!("xbI@{point}"),
+            Some((point, true)),
+        )?;
     }
     if fixture.first {
-        add(8, 1, long, vec![], "xbI@Z_E".into(), Some(("Z_E".into(), true)))?;
+        add(
+            8,
+            1,
+            long,
+            vec![],
+            "xbI@Z_E".into(),
+            Some(("Z_E".into(), true)),
+        )?;
     }
     for point in xo {
-        add(7, 1, long, vec![], format!("xbO@{point}"), Some((point, true)))?;
+        add(
+            7,
+            1,
+            long,
+            vec![],
+            format!("xbO@{point}"),
+            Some((point, true)),
+        )?;
     }
     for point in ad {
-        add(3, 1, 64, vec![], format!("ad@{point}"), Some((point, false)))?;
+        add(
+            3,
+            1,
+            64,
+            vec![],
+            format!("ad@{point}"),
+            Some((point, false)),
+        )?;
     }
     for point in ar {
-        add(4, 1, 64, vec![], format!("ar@{point}"), Some((point, false)))?;
+        add(
+            4,
+            1,
+            64,
+            vec![],
+            format!("ar@{point}"),
+            Some((point, false)),
+        )?;
     }
     for point in qs {
-        add(6, 1, 64, vec![], format!("qa@{point}"), Some((point, false)))?;
+        add(
+            6,
+            1,
+            64,
+            vec![],
+            format!("qa@{point}"),
+            Some((point, false)),
+        )?;
     }
     let mb = 1u64 << 13;
-    add(5, 1, mb, forest_phi_b(forest, 13, 0), "b-bits-0".into(), None)?;
-    add(5, 1, mb, forest_phi_b(forest, 13, 1), "b-bits-1".into(), None)?;
+    add(
+        5,
+        1,
+        mb,
+        forest_phi_b(forest, 13, 0),
+        "b-bits-0".into(),
+        None,
+    )?;
+    add(
+        5,
+        1,
+        mb,
+        forest_phi_b(forest, 13, 1),
+        "b-bits-1".into(),
+        None,
+    )?;
     add(5, 1, mb, forest_phi_p(13), "b-pin".into(), None)?;
     if position != fixture.n_u3 {
         return Err(FpError::Range {
@@ -586,7 +679,10 @@ pub fn through_terms(
     for i in 0..NI as usize {
         let weight = scale * eq_i[i];
         for s in 0..N_SL as usize {
-            start.add(&Aff::slot(s_w + (N_SL as usize * i + s) as u32), weight * gp[s]);
+            start.add(
+                &Aff::slot(s_w + (N_SL as usize * i + s) as u32),
+                weight * gp[s],
+            );
         }
     }
     let mut rho = rho_i;
@@ -651,17 +747,18 @@ pub fn through_terms(
 pub fn assign_later_phi(run: &mut LayerRun) -> Result<(), FpError> {
     let later = run.tables.later_phi.clone();
     for x in later {
-        let point = run.points.get(&x.point).unwrap_or_else(|| panic!("missing laterPhi point {}", x.point)).clone();
+        let point = run
+            .points
+            .get(&x.point)
+            .unwrap_or_else(|| panic!("missing laterPhi point {}", x.point))
+            .clone();
         if point.len() != if x.long { 8 } else { 6 } {
             return Err(FpError::Range {
                 context: "layer-table-point",
             });
         }
         if x.long {
-            let weights = crate::fp::tensor::block_rows(
-                &eq_top(&point[..2]),
-                &eq_top(&point[2..]),
-            );
+            let weights = crate::fp::tensor::block_rows(&eq_top(&point[..2]), &eq_top(&point[2..]));
             for j in 0..x.count {
                 run.tables.fun[x.first + j].phi = weights.clone();
             }

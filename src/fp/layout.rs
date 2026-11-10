@@ -385,6 +385,27 @@ pub struct FileLayout<'a> {
     position_dependent: bool,
 }
 
+impl<'a> FileLayout<'a> {
+    /// Build a scalar-only layout from a generated transcript's messages.
+    pub fn from_messages(messages: &'a [PlanMessage]) -> Result<Self, FpError> {
+        let mut builder = LayoutBuilder::default();
+        for message in messages {
+            if message.position_dependent || message.kind != MessageKind::Scalars {
+                return Err(FpError::Range {
+                    context: "generated-layout-kind",
+                });
+            }
+            builder.push_repeated(message)?;
+        }
+        Ok(Self {
+            kind: FileKind::Proof,
+            fields: builder.fields,
+            maximum_bytes: builder.offset,
+            position_dependent: false,
+        })
+    }
+}
+
 impl FileLayout<'_> {
     pub fn kind(&self) -> FileKind {
         self.kind

@@ -395,7 +395,11 @@ impl LinPublic {
     ) -> Self {
         let mut parameter_bytes = Vec::new();
         put_bytes(&mut parameter_bytes, plan_bytes);
-        item(&mut parameter_bytes, "configuration", &configuration.to_le_bytes());
+        item(
+            &mut parameter_bytes,
+            "configuration",
+            &configuration.to_le_bytes(),
+        );
         item(&mut parameter_bytes, "codes", &{
             let mut out = Vec::new();
             put_vec(&mut out, &codes.base, code);
@@ -434,7 +438,40 @@ impl LinPublic {
         plan_bytes: &[u8],
         binding_root: &crate::fp::lin::LinBindingRoot,
     ) -> Self {
-        Self::shared_parts(&fixed.codes, &fixed.lin, &fixed.configuration, table, plan_bytes, binding_root)
+        Self::shared_parts(
+            &fixed.codes,
+            &fixed.lin,
+            &fixed.configuration,
+            table,
+            plan_bytes,
+            binding_root,
+        )
+    }
+
+    pub fn second_parts(
+        configuration: &Digest,
+        plan_bytes: &[u8],
+        binding_root: &crate::fp::lin::LinBindingRoot,
+    ) -> Self {
+        let mut parameter_bytes = Vec::new();
+        put_bytes(&mut parameter_bytes, plan_bytes);
+        item(
+            &mut parameter_bytes,
+            "configuration",
+            &configuration.to_le_bytes(),
+        );
+        let parameters = {
+            let mut h = Hasher::new(PARAMETERS, 1, &[0; 8], 32);
+            h.push(&parameter_bytes);
+            h.finish()
+        };
+        Self {
+            parameter_bytes,
+            parameters,
+            statement: Vec::new(),
+            places: binding_root.places,
+            random: binding_root.digest,
+        }
     }
 
     pub fn first_query(&self, label: u64) -> FirstQuery {

@@ -190,6 +190,7 @@ impl Tensor {
         if self.vars == 0 {
             return;
         }
+        let old_vars = self.vars;
         let los: Vec<E> = (0..self.vars)
             .map(|i| self.lo((i + by) % self.vars))
             .collect();
@@ -203,6 +204,13 @@ impl Tensor {
         self.pick_value = 0;
         for (l, h) in los.into_iter().zip(his) {
             self.push(l, h);
+        }
+        for variable in &mut self.dense_vars {
+            *variable = if *variable >= by {
+                *variable - by
+            } else {
+                *variable + old_vars - by
+            };
         }
     }
 
@@ -236,6 +244,10 @@ impl Tensor {
             let challenge = g[variable as usize];
             let low_half = 1usize << i;
             let mut next = vec![E::ZERO; values.len() / 2];
+            #[cfg(feature = "icicle-prover")]
+            crate::fp::gpu::dense_fold_extension(&values, challenge, low_half, &mut next)
+                .expect("ICICLE dense fold failed");
+            #[cfg(not(feature = "icicle-prover"))]
             for b in 0..values.len() / (2 * low_half) {
                 for a in 0..low_half {
                     let zero = values[a + 2 * low_half * b];
@@ -437,6 +449,32 @@ pub fn tensor_below(v: &Tensor, from: u32, count: u32, len: u64) -> Vec<Tensor> 
     if least >= len {
         return vec![];
     }
+    let dense = v
+        .dense_vars
+        .iter()
+        .filter(|&&variable| variable >= from && variable < from + count)
+        .count();
+    if dense != 0 {
+        assert_eq!(dense, count as usize);
+        let source = v.values.as_ref().expect("dense tensor values");
+        let block_len = 1usize << v.dense_vars.len();
+        let mut values = source[v.first as usize..v.first as usize + block_len].to_vec();
+        for (d, value) in values.iter_mut().enumerate() {
+            let mut number = 0u64;
+            for (i, &variable) in v.dense_vars.iter().enumerate() {
+                if variable >= from && variable < from + count {
+                    number |= (((d >> i) & 1) as u64) << (variable - from);
+                }
+            }
+            if number >= len {
+                *value = E::ZERO;
+            }
+        }
+        let mut w = v.clone();
+        w.values = Some(values);
+        w.first = 0;
+        return vec![w];
+    }
     let mut out = Vec::new();
     for q in (0..count).rev() {
         if (len >> q) & 1 == 0 {
@@ -458,10 +496,39 @@ pub fn tensor_below(v: &Tensor, from: u32, count: u32, len: u64) -> Vec<Tensor> 
 
 pub fn fold_low_once(values: &mut Vec<E>, challenge: E) {
     assert_eq!(values.len() % 2, 0);
-    for i in 0..values.len() / 2 {
-        values[i] = values[2 * i] + challenge * (values[2 * i + 1] - values[2 * i]);
+    #[cfg(feature = "icicle-prover")]
+    {
+        let mut folded = vec![E::ZERO; values.len() / 2];
+        crate::fp::gpu::sumcheck_fold_extension(values, challenge, &mut folded)
+            .expect("ICICLE proximity fold failed");
+        *values = folded;
     }
-    values.truncate(values.len() / 2);
+    #[cfg(not(feature = "icicle-prover"))]
+    {
+        for i in 0..values.len() / 2 {
+            values[i] = values[2 * i] + challenge * (values[2 * i + 1] - values[2 * i]);
+        }
+        values.truncate(values.len() / 2);
+    }
+}
+
+pub fn fold_low_pair_once(a: &mut Vec<E>, b: &mut Vec<E>, challenge: E) {
+    assert_eq!(a.len(), b.len());
+    #[cfg(feature = "icicle-prover")]
+    {
+        let mut joined = Vec::with_capacity(a.len() + b.len());
+        joined.extend_from_slice(a);
+        joined.extend_from_slice(b);
+        fold_low_once(&mut joined, challenge);
+        let half = joined.len() / 2;
+        *a = joined[..half].to_vec();
+        *b = joined[half..].to_vec();
+    }
+    #[cfg(not(feature = "icicle-prover"))]
+    {
+        fold_low_once(a, challenge);
+        fold_low_once(b, challenge);
+    }
 }
 
 pub fn fold_low(mut values: Vec<E>, challenges: &[E]) -> Vec<E> {
@@ -613,5 +680,37 @@ mod tests {
         tensor.fix_low(&[E([2, 0, 0])], 1);
         assert_eq!(tensor.at(0), E([10, 0, 0]));
         assert_eq!(tensor.at(1), E([18, 0, 0]));
+    }
+
+    #[test]
+    fn dense_rotation_preserves_entries_under_rows_high_layout() {
+        let mut tensor = Tensor::eq(&[], e(2));
+        tensor.push_dense(2);
+        tensor.set_values(vec![e(1), e(3), e(5), e(7)], 0);
+        let layout = crate::fp::claims::VectorLay {
+            row_bits: 2,
+            place_bits: 2,
+            rows_high: true,
+        };
+        let placed = layout.on_table(tensor);
+        for entry in 0..4u64 {
+            assert_eq!(placed.at(layout.index(entry)), e(2 * (2 * entry + 1)));
+        }
+        assert_eq!(placed.at(1), E::ZERO);
+    }
+
+    #[test]
+    fn tensor_below_zeroes_dense_entries_at_cut() {
+        let mut tensor = Tensor::eq(&[], E::ONE);
+        tensor.push_dense(3);
+        tensor.set_values((1..=8).map(e).collect(), 0);
+        let cut = tensor_below(&tensor, 0, 3, 5);
+        assert_eq!(cut.len(), 1);
+        for index in 0..8u64 {
+            assert_eq!(
+                cut[0].at(index),
+                if index < 5 { e(index + 1) } else { E::ZERO }
+            );
+        }
     }
 }

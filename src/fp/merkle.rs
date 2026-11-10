@@ -53,11 +53,33 @@ pub fn hash_leaf(
     let digest = h.finish();
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() && tree.tree_number == 1 {
-        eprintln!("RUST_OMEGA_LEAF start={} leaf={} position={} tag={:016x} index={}", start.to_hex(), digest.to_hex(), position, tag, index);
+        eprintln!(
+            "RUST_OMEGA_LEAF start={} leaf={} position={} tag={:016x} index={}",
+            start.to_hex(),
+            digest.to_hex(),
+            position,
+            tag,
+            index
+        );
     } else if std::env::var_os("DUMP_SHARED").is_some() && tree.tree_number == 5 {
-        eprintln!("RUST_FRESH_LEAF start={} leaf={} position={} tag={:016x} index={}", start.to_hex(), digest.to_hex(), position, tag, index);
+        eprintln!(
+            "RUST_FRESH_LEAF start={} leaf={} position={} tag={:016x} index={}",
+            start.to_hex(),
+            digest.to_hex(),
+            position,
+            tag,
+            index
+        );
     } else if std::env::var_os("DUMP_SHARED").is_some() && tree.tree_number == 2 {
-        eprintln!("RUST_FOLD_LEAF start={} leaf={} position={} run={} tag={:016x} index={}", start.to_hex(), digest.to_hex(), position, start.to_hex(), tag, index);
+        eprintln!(
+            "RUST_FOLD_LEAF start={} leaf={} position={} run={} tag={:016x} index={}",
+            start.to_hex(),
+            digest.to_hex(),
+            position,
+            start.to_hex(),
+            tag,
+            index
+        );
     }
     Ok(digest)
 }
@@ -176,7 +198,11 @@ pub fn verify_opening(
     }
     if now.len() != 1 || now[0].1 != *root {
         #[cfg(feature = "std")]
-        eprintln!("MERkle_MISMATCH computed={} expected={}", now[0].1.to_hex(), root.to_hex());
+        eprintln!(
+            "MERkle_MISMATCH computed={} expected={}",
+            now[0].1.to_hex(),
+            root.to_hex()
+        );
         return Err(FpError::Range {
             context: "merkle-root",
         });

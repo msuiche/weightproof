@@ -83,8 +83,26 @@ impl Iopp {
         masks_ride: bool,
     ) -> Result<GroupRow, FpError> {
         self.fold_cs_inner(
-            stages, samples, stage, row, hiding, epsilon, polynomials, challenges, z, beta,
-            answer, positions, theta, opened, anew, None, target, masks_ride, true, self.group,
+            stages,
+            samples,
+            stage,
+            row,
+            hiding,
+            epsilon,
+            polynomials,
+            challenges,
+            z,
+            beta,
+            answer,
+            positions,
+            theta,
+            opened,
+            anew,
+            None,
+            target,
+            masks_ride,
+            true,
+            self.group,
         )
         .map(|(row, _)| row.unwrap())
     }
@@ -112,8 +130,26 @@ impl Iopp {
         to_group: crate::fp::claims::GroupId,
     ) -> Result<(Option<GroupRow>, crate::fp::proximity::SingleRows), FpError> {
         self.fold_cs_inner(
-            stages, samples, stage, row, hiding, epsilon, polynomials, challenges, z, beta,
-            answer, positions, theta, opened, anew, Some(oracle), target, false, false, to_group,
+            stages,
+            samples,
+            stage,
+            row,
+            hiding,
+            epsilon,
+            polynomials,
+            challenges,
+            z,
+            beta,
+            answer,
+            positions,
+            theta,
+            opened,
+            anew,
+            Some(oracle),
+            target,
+            false,
+            false,
+            to_group,
         )
     }
 
@@ -142,6 +178,16 @@ impl Iopp {
         to_group: crate::fp::claims::GroupId,
     ) -> Result<(Option<GroupRow>, crate::fp::proximity::SingleRows), FpError> {
         let next = stages[stage + 1];
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() {
+            eprintln!(
+                "RUST_INITIAL_FORM c0={:016x} c1={:016x} c2={:016x} c3={:016x}",
+                row.c.at(0).0[0],
+                row.c.at(1).0[0],
+                row.c.at(2).0[0],
+                row.c.at(3).0[0]
+            );
+        }
         let mut claim = hiding + epsilon * row.target;
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
@@ -149,7 +195,10 @@ impl Iopp {
         }
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            eprintln!("RUST_FOLD_INITIAL {:016x} {:016x} {:016x}", claim.0[0], claim.0[1], claim.0[2]);
+            eprintln!(
+                "RUST_FOLD_INITIAL {:016x} {:016x} {:016x}",
+                claim.0[0], claim.0[1], claim.0[2]
+            );
         }
         for (&(c0, c2), &challenge) in polynomials.iter().zip(challenges) {
             claim = fold_round_claim(claim, c0, c2, challenge);
@@ -294,13 +343,22 @@ impl Iopp {
         let right = target_star + lambda * rows.target;
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            let main = crate::fp::tensor::inner(&{
-                let mut coefficients = vec![E::ZERO; self.statement.base[rows.code as usize].ell as usize];
-                rows.c.add_to(&mut coefficients);
-                coefficients
-            }, &messages[0]);
-            let mask = if rows.masks == 0 { E::ZERO } else { crate::fp::tensor::inner(&rows.d[0], &messages[1]) };
+            let main = crate::fp::tensor::inner(
+                &{
+                    let mut coefficients =
+                        vec![E::ZERO; self.statement.base[rows.code as usize].ell as usize];
+                    rows.c.add_to(&mut coefficients);
+                    coefficients
+                },
+                &messages[0],
+            );
+            let mask = if rows.masks == 0 {
+                E::ZERO
+            } else {
+                crate::fp::tensor::inner(&rows.d[0], &messages[1])
+            };
             eprintln!("RUST_SHARED_BASE main={:016x} mask={:016x} target_star={:016x} lambda={:016x} target={:016x} left={:016x} right={:016x} d0={:016x} d1={:016x} d2={:016x} d3={:016x}", main.0[0], mask.0[0], target_star.0[0], lambda.0[0], rows.target.0[0], left.0[0], right.0[0], rows.d[0].get(0).map_or(E::ZERO, |x| *x).0[0], rows.d[0].get(1).map_or(E::ZERO, |x| *x).0[0], rows.d[0].get(2).map_or(E::ZERO, |x| *x).0[0], rows.d[0].get(3).map_or(E::ZERO, |x| *x).0[0]);
+            eprintln!("RUST_BASE_FORM c0={:016x} c1={:016x} c2={:016x} c3={:016x} m0={:016x} m1={:016x} m2={:016x} m3={:016x}", rows.c.at(0).0[0], rows.c.at(1).0[0], rows.c.at(2).0[0], rows.c.at(3).0[0], messages[0][0].0[0], messages[0][1].0[0], messages[0][2].0[0], messages[0][3].0[0]);
         }
         if left != right {
             return Err(FpError::Range {

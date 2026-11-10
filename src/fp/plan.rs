@@ -223,7 +223,11 @@ pub(crate) fn cs_positions(
     }
 }
 
-pub(crate) fn base_positions(setting: &Setting, scope: Scope, stage: &Stage) -> Result<u64, FpError> {
+pub(crate) fn base_positions(
+    setting: &Setting,
+    scope: Scope,
+    stage: &Stage,
+) -> Result<u64, FpError> {
     let out = positions(
         analysis_of_m(&stage.g).at.agree,
         setting.target - setting.query_work(scope),
@@ -235,7 +239,14 @@ pub(crate) fn base_positions(setting: &Setting, scope: Scope, stage: &Stage) -> 
     });
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {
-        eprintln!("RUST_BASE_POSITIONS agree={} bits={} m={} t={} out={:?}", analysis_of_m(&stage.g).at.agree, setting.target - setting.query_work(scope), stage.g.m, stage.t, out);
+        eprintln!(
+            "RUST_BASE_POSITIONS agree={} bits={} m={} t={} out={:?}",
+            analysis_of_m(&stage.g).at.agree,
+            setting.target - setting.query_work(scope),
+            stage.g.m,
+            stage.t,
+            out
+        );
     }
     out
 }

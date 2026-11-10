@@ -99,9 +99,17 @@ pub fn laid_ok(
                 return false;
             }
             for previous in &blocks[..x] {
-                if meet(block.first_i, block.bits_i, previous.first_i, previous.bits_i)
-                    && meet(block.first_c, block.bits_c, previous.first_c, previous.bits_c)
-                {
+                if meet(
+                    block.first_i,
+                    block.bits_i,
+                    previous.first_i,
+                    previous.bits_i,
+                ) && meet(
+                    block.first_c,
+                    block.bits_c,
+                    previous.first_c,
+                    previous.bits_c,
+                ) {
                     return false;
                 }
             }
@@ -114,9 +122,17 @@ pub fn laid_ok(
     }
     for (x, block) in all.iter().enumerate() {
         for previous in &all[..x] {
-            if meet(block.first_row, block.row_bits, previous.first_row, previous.row_bits)
-                && meet(block.first_place, block.place_bits, previous.first_place, previous.place_bits)
-            {
+            if meet(
+                block.first_row,
+                block.row_bits,
+                previous.first_row,
+                previous.row_bits,
+            ) && meet(
+                block.first_place,
+                block.place_bits,
+                previous.first_place,
+                previous.place_bits,
+            ) {
                 return false;
             }
         }
@@ -135,21 +151,33 @@ pub fn laid_tensor(
     if !laid_block_ok(block, table_row_bits, table_place_bits)
         || on_i.written_out() && on_c.written_out()
     {
-        return Err(FpError::Range { context: "laid-block" });
+        return Err(FpError::Range {
+            context: "laid-block",
+        });
     }
     let mut tensor = Tensor::eq(&[], scalar);
-    let low_bits = if block.i_is_low { block.bits_i } else { block.bits_c };
+    let low_bits = if block.i_is_low {
+        block.bits_i
+    } else {
+        block.bits_c
+    };
     let mut dense = Vec::new();
     let mut push_bit = |tensor: &mut Tensor, x_bit: u32| -> Result<(), FpError> {
         let of_i = (x_bit < low_bits) == block.i_is_low;
-        let bit = if x_bit < low_bits { x_bit } else { x_bit - low_bits };
+        let bit = if x_bit < low_bits {
+            x_bit
+        } else {
+            x_bit - low_bits
+        };
         let weights = if of_i { on_i } else { on_c };
         if weights.written_out() {
             dense.push((bit, tensor.vars()));
             tensor.push(E::ONE, E::ONE);
         } else {
             if bit as usize >= weights.lo.len() || bit as usize >= weights.hi.len() {
-                return Err(FpError::Range { context: "laid-weights" });
+                return Err(FpError::Range {
+                    context: "laid-weights",
+                });
             }
             tensor.push(weights.lo[bit as usize], weights.hi[bit as usize]);
         }
@@ -171,12 +199,17 @@ pub fn laid_tensor(
         table_place_bits - block.place_bits,
         block.first_place >> block.place_bits,
     );
-    for (weights, first, bits) in [(on_i, block.first_i, block.bits_i), (on_c, block.first_c, block.bits_c)] {
+    for (weights, first, bits) in [
+        (on_i, block.first_i, block.bits_i),
+        (on_c, block.first_c, block.bits_c),
+    ] {
         if weights.written_out() {
             continue;
         }
         if weights.lo.len() < 64 && first >> weights.lo.len() != 0 {
-            return Err(FpError::Range { context: "laid-weights" });
+            return Err(FpError::Range {
+                context: "laid-weights",
+            });
         }
         for i in bits as usize..weights.lo.len() {
             tensor.scalar *= if (first >> i) & 1 != 0 {
@@ -215,21 +248,20 @@ pub fn laid_form(
 ) -> Result<Form, FpError> {
     let mut form = Form::default();
     for block in blocks {
-        let tensor = laid_tensor(
-            block,
-            table_row_bits,
-            table_place_bits,
-            on_i,
-            on_c,
-            scalar,
-        )?;
+        let tensor = laid_tensor(block, table_row_bits, table_place_bits, on_i, on_c, scalar)?;
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
             let vars = tensor.vars();
             let point = vec![E::ONE + E::ONE; vars as usize];
             let mut folded = tensor.clone();
             folded.fix_low(&point, vars);
-            eprintln!("RUST_LAID_BLOCK first_i={} first_c={} value={:016x}", block.first_i, block.first_c, folded.at(0).0[0]);
+            eprintln!(
+                "RUST_LAID_BLOCK first_i={} first_c={} scalar={:016x} value={:016x}",
+                block.first_i,
+                block.first_c,
+                folded.scalar.0[0],
+                folded.at(0).0[0]
+            );
         }
         form.add(tensor);
     }
@@ -245,6 +277,15 @@ pub fn req_row(
     mut where_oracle: impl FnMut(usize, usize) -> Result<u32, FpError>,
 ) -> Result<Row, FpError> {
     let mut row = Row::default();
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_REQ").is_some() {
+        eprintln!(
+            "RUST_REQ_ROW link={} target={:016x} terms={}",
+            link,
+            equation.target.0[0],
+            equation.terms.len()
+        );
+    }
     for (term_index, term) in equation.terms.iter().enumerate() {
         let array = layout.find(term.born, &term.array).ok_or(FpError::Range {
             context: "request-array",
@@ -256,16 +297,31 @@ pub fn req_row(
             }
         }
         let oracle = where_oracle(term.born, array.message)?;
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_REQ").is_some() {
+            eprintln!(
+                "RUST_REQ_TERM born={} array={} message={} oracle={}",
+                term.born, array.name, array.message, oracle
+            );
+        }
         let shape = &statement.oracles[oracle as usize].shape;
         let row_bits = crate::fp::tensor::ceil_log2(shape.main_rows);
         let place_bits = crate::fp::code_eval::log_ell(&statement.base[shape.code as usize]);
         let matrices: Vec<_> = layout.links[term.born]
             .iter()
             .filter(|candidate| candidate.message == array.message)
-            .map(|candidate| (candidate.blocks.as_slice(), candidate.size_i, candidate.size_c))
+            .map(|candidate| {
+                (
+                    candidate.blocks.as_slice(),
+                    candidate.size_i,
+                    candidate.size_c,
+                )
+            })
             .collect();
         if !laid_ok(&matrices, row_bits, place_bits) {
-            return Err(FpError::Range { context: "request-layout" });
+            return Err(FpError::Range {
+                context: "request-layout",
+            });
         }
         let form = laid_form(
             &array.blocks,
@@ -277,9 +333,18 @@ pub fn req_row(
         )?;
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            let vars = form.tensors.iter().map(|tensor| tensor.vars()).max().unwrap_or(0);
+            let vars = form
+                .tensors
+                .iter()
+                .map(|tensor| tensor.vars())
+                .max()
+                .unwrap_or(0);
             let point = vec![E::ONE + E::ONE; vars as usize];
-            eprintln!("RUST_EQ_FORM oracle={} hash={:016x}", oracle, form.mle(&point).0[0]);
+            eprintln!(
+                "RUST_EQ_FORM oracle={} hash={:016x}",
+                oracle,
+                form.mle(&point).0[0]
+            );
         }
         row.add_form(oracle, form);
     }

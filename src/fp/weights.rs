@@ -28,7 +28,11 @@ impl WsGrp {
         self.high && b >= self.z - self.t || !self.high && b < self.t
     }
     pub fn taken_at(&self, i: i32) -> i32 {
-        if self.high { self.z - self.t + i } else { i }
+        if self.high {
+            self.z - self.t + i
+        } else {
+            i
+        }
     }
     pub fn a_taken(&self) -> bool {
         self.cls == 'A' && self.t > 0
@@ -129,13 +133,23 @@ pub fn ws_lay() -> WsLay {
                 x.z.min(left)
             } else {
                 let c = crate::fp::tensor::ceil_log2(x.r) as i32;
-                if c <= left { c } else { 0 }
+                if c <= left {
+                    c
+                } else {
+                    0
+                }
             };
             x.t = t;
             x.cb0 = cb;
             left -= t;
             cb += t;
-            x.left = if x.cls == 'E' { x.r >> t } else if x.a_taken() { 1 } else { x.r };
+            x.left = if x.cls == 'E' {
+                x.r >> t
+            } else if x.a_taken() {
+                1
+            } else {
+                x.r
+            };
             rows *= x.left as u128;
         }
         let off = m0;
@@ -152,20 +166,92 @@ pub fn ws_lay() -> WsLay {
     };
     for l in 0..8u32 {
         let moe = l % 2 == 1;
-        add(0, l, 2, vec![a_grp("hd", 64), a_grp("cd", 128), e_grp("kk", 512, false)]);
-        add(1, l, 2, vec![e_grp("kk", 512, false), e_grp("x", 256, true)]);
-        add(2, l, 2, vec![e_grp("kk", 512, false), e_grp("x", 512, true)]);
+        add(
+            0,
+            l,
+            2,
+            vec![a_grp("hd", 64), a_grp("cd", 128), e_grp("kk", 512, false)],
+        );
+        add(
+            1,
+            l,
+            2,
+            vec![e_grp("kk", 512, false), e_grp("x", 256, true)],
+        );
+        add(
+            2,
+            l,
+            2,
+            vec![e_grp("kk", 512, false), e_grp("x", 512, true)],
+        );
         if !moe {
-            add(3, l, 2, vec![e_grp("kk", 512, false), e_grp("x", 1024, true)]);
-            add(4, l, 2, vec![e_grp("kk", 512, false), e_grp("x", 1024, true)]);
-            add(9, l, 2, vec![e_grp("kk", 1024, false), e_grp("x", 512, true)]);
+            add(
+                3,
+                l,
+                2,
+                vec![e_grp("kk", 512, false), e_grp("x", 1024, true)],
+            );
+            add(
+                4,
+                l,
+                2,
+                vec![e_grp("kk", 512, false), e_grp("x", 1024, true)],
+            );
+            add(
+                9,
+                l,
+                2,
+                vec![e_grp("kk", 1024, false), e_grp("x", 512, true)],
+            );
         } else {
-            add(5, l, 2, vec![e_grp("kk", 512, false), e_grp("x", 512, true)]);
-            add(6, l, 2, vec![e_grp("kk", 512, false), e_grp("x", 512, true)]);
-            add(7, l, 2, vec![e_grp("kk", 512, false), e_grp("e", 4, false), e_grp("x", 512, true)]);
-            add(8, l, 2, vec![e_grp("kk", 512, false), e_grp("e", 4, false), e_grp("x", 512, true)]);
-            add(9, l, 2, vec![e_grp("kk", 512, false), e_grp("x", 512, true)]);
-            add(10, l, 2, vec![e_grp("kk", 512, false), e_grp("e", 4, false), e_grp("x", 512, true)]);
+            add(
+                5,
+                l,
+                2,
+                vec![e_grp("kk", 512, false), e_grp("x", 512, true)],
+            );
+            add(
+                6,
+                l,
+                2,
+                vec![e_grp("kk", 512, false), e_grp("x", 512, true)],
+            );
+            add(
+                7,
+                l,
+                2,
+                vec![
+                    e_grp("kk", 512, false),
+                    e_grp("e", 4, false),
+                    e_grp("x", 512, true),
+                ],
+            );
+            add(
+                8,
+                l,
+                2,
+                vec![
+                    e_grp("kk", 512, false),
+                    e_grp("e", 4, false),
+                    e_grp("x", 512, true),
+                ],
+            );
+            add(
+                9,
+                l,
+                2,
+                vec![e_grp("kk", 512, false), e_grp("x", 512, true)],
+            );
+            add(
+                10,
+                l,
+                2,
+                vec![
+                    e_grp("kk", 512, false),
+                    e_grp("e", 4, false),
+                    e_grp("x", 512, true),
+                ],
+            );
             add(11, l, 2, vec![e_grp("kk", 512, false), e_grp("x", 4, true)]);
         }
     }
@@ -176,7 +262,7 @@ pub fn ws_lay() -> WsLay {
 }
 
 fn ws_eq1(z: E, x: E) -> E {
-    z * x
+    z * x + (E::ONE - z) * (E::ONE - x)
 }
 
 pub fn ws_eps_t(lay: &WsLay, claim: &WsClaim, rm: &[E]) -> E {
@@ -188,11 +274,16 @@ pub fn ws_eps_t(lay: &WsLay, claim: &WsClaim, rm: &[E]) -> E {
         let xfac = &claim.f[gi];
         if g.cls == 'E' {
             for i in 0..g.t {
-                p *= ws_eq1(xfac.pt[(g.z - 1 - g.taken_at(i)) as usize], x((g.cb0 + i) as usize));
+                let pt = xfac.pt[(g.z - 1 - g.taken_at(i)) as usize];
+                let coordinate = x((g.cb0 + i) as usize);
+                p *= ws_eq1(pt, coordinate);
             }
         } else if g.a_taken() {
-            let zz: Vec<E> = (0..g.t).map(|s| x((g.cb0 + g.t - 1 - s) as usize)).collect();
-            let e = eq_table(&zz);
+            let zz: Vec<E> = (0..g.t)
+                .map(|s| x((g.cb0 + g.t - 1 - s) as usize))
+                .collect();
+            let point: Vec<E> = zz.iter().rev().copied().collect();
+            let e = eq_table(&point);
             let mut s = E::ZERO;
             for (i, &coefficient) in xfac.av.iter().enumerate() {
                 s += coefficient * e[i];
@@ -258,7 +349,8 @@ fn gamma_add(gam: &mut [E], lay: &WsLay, claim: &WsRecClaim, wgt: E) {
         let mut rf = vec![E::ZERO; g.left as usize];
         if g.cls == 'E' {
             let zl = (g.z - g.t) as usize;
-            let e = eq_table(&xfac.pl);
+            let point: Vec<E> = xfac.pl.iter().rev().copied().collect();
+            let e = eq_table(&point);
             for hi in 0..g.o {
                 for lo in 0..1 << zl {
                     let at = ((hi << zl) + lo) as usize;
@@ -288,8 +380,16 @@ fn gamma_add(gam: &mut [E], lay: &WsLay, claim: &WsRecClaim, wgt: E) {
     }
 }
 
-pub fn ws_pending(lay: &WsLay, merged: &WsMerged, claims: usize, shape: &LinShape) -> Result<WsPendingOut, FpError> {
-    if lay.m0 != shape.matrix_rows || merged.rec.len() != claims || merged.rm.len() != lay.lk as usize {
+pub fn ws_pending(
+    lay: &WsLay,
+    merged: &WsMerged,
+    claims: usize,
+    shape: &LinShape,
+) -> Result<WsPendingOut, FpError> {
+    if lay.m0 != shape.matrix_rows
+        || merged.rec.len() != claims
+        || merged.rm.len() != lay.lk as usize
+    {
         #[cfg(feature = "std")]
         eprintln!(
             "RUST_WEIGHTS_PENDING lay_m0={} shape_rows={} rec_len={} claims={} rm_len={} lk={}",
@@ -320,8 +420,29 @@ pub fn ws_pending(lay: &WsLay, merged: &WsMerged, claims: usize, shape: &LinShap
         gamma_add(&mut gam, lay, claim, E::ONE);
     }
     let values = &gam[first as usize..last as usize];
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_OWN_BASE").is_some() {
+        eprintln!(
+            "RUST_WEIGHTS_GAMMA first={} last={} values={:?}",
+            first,
+            last,
+            values
+                .iter()
+                .take(12)
+                .map(|value| value.0[0])
+                .collect::<Vec<_>>()
+        );
+    }
     let mut g = Vec::new();
-    wf_weights_on_rows(shape.k_row(), first, values, 0, values.len() as u64, E::ONE, &mut g);
+    wf_weights_on_rows(
+        shape.k_row(),
+        first,
+        values,
+        0,
+        values.len() as u64,
+        E::ONE,
+        &mut g,
+    );
     let psi = merged.rm.iter().rev().copied().collect();
     Ok(WsPendingOut {
         g,
@@ -339,18 +460,17 @@ pub struct WsPendingOut {
     pub target: E,
 }
 
-pub fn pending_row(lay: &WsLay, merged: &WsMerged, claims: usize, shape: &LinShape) -> Result<TensorRow, FpError> {
+pub fn pending_row(
+    lay: &WsLay,
+    merged: &WsMerged,
+    claims: usize,
+    shape: &LinShape,
+) -> Result<TensorRow, FpError> {
     let pending = ws_pending(lay, merged, claims, shape)?;
     Ok(TensorRow {
         g: pending.g,
         psi: pending.psi,
-        masks: vec![crate::fp::mask::MaskTerm {
-            slot: crate::fp::mask::MaskSlot {
-                oracle: 0,
-                index: 0,
-            },
-            coeff: pending.beta,
-        }],
+        masks: vec![],
         target: pending.target,
     })
 }

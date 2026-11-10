@@ -1,0 +1,70 @@
+name: verifier
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch FlashProve ground-truth fixtures
+        run: git clone --depth 1 https://github.com/anthropics/FlashProve.git spikes/flashprove
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: thumbv7em-none-eabi
+          components: rustfmt, clippy
+
+      - name: Run Rust tests
+        run: cargo test --locked
+
+      - name: Check no-std verifier
+        run: cargo check --locked --no-default-features --target thumbv7em-none-eabi
+      - name: Benchmark block proof and verification
+        run: cargo bench --locked --bench block_proof -- --sample-size 10 --measurement-time 1
+
+  icicle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test ICICLE kernels and statement-bound proofs
+        run: cargo test --locked --features icicle-prover
+      - name: Benchmark ICICLE multilinear block proofs
+        run: cargo bench --locked --features icicle-prover --bench block_proof -- --sample-size 10 --measurement-time 1 --warm-up-time 0.1
+
+  formal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@498ce7030982ff0e0cecd98a8f5a7c90615b4e41
+        with:
+          auto-config: false
+          build: false
+          test: false
+          lint: false
+          use-mathlib-cache: false
+      - name: Check fused fold correctness and non-vacuity
+        run: lean formal/GpuFold.lean
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: cargo-bins/cargo-binstall@v1
+        with:
+          crate: cargo-fuzz
+      - name: Fuzz verifier parsers
+        run: |
+          cd fuzz
+          for target in fp_request fp_policy fp_proof_head fp_layout fp_compact_proof; do
+            cargo fuzz run "$target" -- -max_total_time=60 -timeout=5
+          done

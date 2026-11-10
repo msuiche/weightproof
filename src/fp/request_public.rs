@@ -1,11 +1,6 @@
 //! Public request shape, array layout, and canonical first-query encoding.
 
-use alloc::{
-    collections::BTreeMap,
-    string::String,
-    vec,
-    vec::Vec,
-};
+use alloc::{collections::BTreeMap, string::String, vec, vec::Vec};
 
 use crate::fp::{
     claims::OracleShape,
@@ -180,7 +175,11 @@ pub fn request_layout(
                     .get(link + 1)
                     .is_some_and(|next| !next.messages.is_empty());
                 let sent = &mut links[link].messages;
-                if sent.last().is_some_and(|last| last.moment as usize > moment) || next_nonempty {
+                if sent
+                    .last()
+                    .is_some_and(|last| last.moment as usize > moment)
+                    || next_nonempty
+                {
                     return Err(FpError::Range { context: CONTEXT });
                 }
                 let moment_groups = messages
@@ -503,9 +502,13 @@ fn req_shape(out: &mut Vec<u8>, value: &ReqShape) {
         super::key_public::notice(out, notice);
     });
     crate::fp::key_public::put_u64(out, value.answers as u64);
-    crate::fp::key_public::put_vec(out, &value.last[usize::from(!value.last.is_empty())..], |out, stage| {
-        super::key_public::stage(out, stage);
-    });
+    crate::fp::key_public::put_vec(
+        out,
+        &value.last[usize::from(!value.last.is_empty())..],
+        |out, stage| {
+            super::key_public::stage(out, stage);
+        },
+    );
     crate::fp::key_public::put_u64(out, value.choice.masks_ride as u64);
 }
 
@@ -564,8 +567,16 @@ impl RequestPublic {
         );
         crate::fp::key_public::item(&mut parameter_bytes, "codes", &{
             let mut out = Vec::new();
-            crate::fp::key_public::put_vec(&mut out, &fixed.codes.base, crate::fp::key_public::code);
-            crate::fp::key_public::put_vec(&mut out, &fixed.codes.mask, crate::fp::key_public::code);
+            crate::fp::key_public::put_vec(
+                &mut out,
+                &fixed.codes.base,
+                crate::fp::key_public::code,
+            );
+            crate::fp::key_public::put_vec(
+                &mut out,
+                &fixed.codes.mask,
+                crate::fp::key_public::code,
+            );
             out
         });
         crate::fp::key_public::item(&mut parameter_bytes, "the test on the table", &{
@@ -601,7 +612,8 @@ impl RequestPublic {
             out
         });
         let parameters = {
-            let mut h = crate::fp::blake2::Hasher::new(crate::fp::blake2::PARAMETERS, 1, &[0; 8], 32);
+            let mut h =
+                crate::fp::blake2::Hasher::new(crate::fp::blake2::PARAMETERS, 1, &[0; 8], 32);
             h.push(&parameter_bytes);
             h.finish()
         };
@@ -664,13 +676,15 @@ mod tests {
 
     #[test]
     fn accepted_layout_matches_oracle_shapes_and_arrays() {
-        let bytes = include_bytes!(
-            "../../spikes/flashprove/examples/accepted-proof/config/layout.txt"
-        );
+        let bytes =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
         let (links, layout) = request_layout(bytes, &accepted_declarations(), 0, 0, 1).unwrap();
         assert_eq!(links.len(), 5);
         assert_eq!(
-            links.iter().map(|link| link.messages.len()).collect::<Vec<_>>(),
+            links
+                .iter()
+                .map(|link| link.messages.len())
+                .collect::<Vec<_>>(),
             [5, 3, 5, 3, 3]
         );
         assert_eq!(links[0].messages[0].shape.main_rows, 61);
@@ -691,26 +705,32 @@ mod tests {
 
     #[test]
     fn malformed_layout_indices_and_blocks_are_rejected() {
-        let bytes = include_bytes!(
-            "../../spikes/flashprove/examples/accepted-proof/config/layout.txt"
-        );
+        let bytes =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
         let declarations = accepted_declarations();
         let mut zero = bytes.to_vec();
         zero[0] = b'0';
         assert!(request_layout(&zero, &declarations, 0, 0, 1).is_err());
         let mut malformed_group = bytes.to_vec();
-        let first_group = malformed_group.iter().position(|&byte| byte == b'\n').unwrap() + 1;
+        let first_group = malformed_group
+            .iter()
+            .position(|&byte| byte == b'\n')
+            .unwrap()
+            + 1;
         malformed_group[first_group] = b'2';
         assert!(request_layout(&malformed_group, &declarations, 0, 0, 1).is_err());
     }
 
     #[test]
     fn accepted_first_query_matches_oracle() {
-        let policy = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
-        let layout = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
+        let policy =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
+        let layout =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
         let kl = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/KL.bin");
         let leaf = include_bytes!("../../spikes/flashprove/examples/accepted-proof/ivk/leaf/0.bin");
-        let request_file = include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.req");
+        let request_file =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.req");
         let configuration = crate::fp::heads::configuration_digest(&[policy, layout, kl]);
         let (root, record, _) = crate::fp::heads::parse_leaf_record(leaf, 256).unwrap();
         let table = crate::fp::link_public::IndexName::new(&root, &configuration, record);
@@ -724,13 +744,23 @@ mod tests {
             include_bytes!("../../spikes/plans/request-first-plan.bin"),
         );
         let expected = include_bytes!("../../spikes/plans/request-first-parameters.bin");
-        let mismatch = public.parameter_bytes.iter().zip(expected.iter()).position(|(a, b)| a != b);
+        let mismatch = public
+            .parameter_bytes
+            .iter()
+            .zip(expected.iter())
+            .position(|(a, b)| a != b);
         assert_eq!(public.parameter_bytes.len(), expected.len());
         assert_eq!(mismatch, None, "first mismatch at {mismatch:?}");
         let expected_statement = include_bytes!("../../spikes/plans/request-first-statement.bin");
-        let statement_mismatch = public.statement.iter().zip(expected_statement.iter()).position(|(a, b)| a != b);
+        let statement_mismatch = public
+            .statement
+            .iter()
+            .zip(expected_statement.iter())
+            .position(|(a, b)| a != b);
         assert_eq!(public.statement.len(), expected_statement.len());
-        assert_eq!(statement_mismatch, None, "statement mismatch at {statement_mismatch:?}");
+        assert_eq!(
+            statement_mismatch, None,
+            "statement mismatch at {statement_mismatch:?}"
+        );
     }
 }
-

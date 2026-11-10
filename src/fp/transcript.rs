@@ -1,6 +1,6 @@
 //! Shared transcript cursor, canonical field decoding, and verified openings.
 
-use alloc::{borrow::ToOwned, collections::BTreeMap, string::String, vec, vec::Vec};
+use alloc::{borrow::ToOwned, collections::BTreeMap, format, string::String, vec, vec::Vec};
 use core::ops::Range;
 
 use crate::fp::{
@@ -20,6 +20,7 @@ pub struct OpeningData {
     pub leaf_bytes: usize,
     pub log_n: u32,
     pub tree_number: u32,
+    pub root_context: String,
 }
 
 impl OpeningData {
@@ -68,6 +69,7 @@ pub(crate) struct Cursor<'a> {
     offset: usize,
     roots: BTreeMap<String, Vec<Digest>>,
     root_bases: BTreeMap<String, u32>,
+    root_runs: BTreeMap<String, Digest>,
     in_field: usize,
     pub(crate) openings: Vec<(String, Vec<u64>)>,
     pub(crate) opened: Vec<OpeningData>,
@@ -104,6 +106,7 @@ impl<'a> Cursor<'a> {
             offset: 0,
             roots,
             root_bases: BTreeMap::new(),
+            root_runs: BTreeMap::new(),
             in_field: 0,
             openings: vec![],
             opened: vec![],
@@ -129,20 +132,19 @@ impl<'a> Cursor<'a> {
         }
         let mut left = need;
         while left > 0 {
-            let field = self
-                .layout
-                .fields()
-                .get(self.index)
-                .ok_or(FpError::Range {
-                    context: "transcript-field-count",
-                })?;
+            let field = self.layout.fields().get(self.index).ok_or(FpError::Range {
+                context: "transcript-field-count",
+            })?;
             if field.message.position_dependent
                 || !matches!(field.message.kind, MessageKind::Scalars)
             {
                 #[cfg(feature = "std")]
                 eprintln!(
                     "RUST_SCALAR_STREAM_BAD index={} name={} context={} kind={:?}\n{:?}",
-                    self.index, field.message.name, field.message.context, field.message.kind,
+                    self.index,
+                    field.message.name,
+                    field.message.context,
+                    field.message.kind,
                     std::backtrace::Backtrace::capture()
                 );
                 return Err(FpError::Range {
@@ -182,7 +184,10 @@ impl<'a> Cursor<'a> {
             || field.message.context != context
         {
             #[cfg(feature = "std")]
-            eprintln!("FIELD_ORDER index={} wanted={}/{} actual={}/{}", self.index, name, context, field.message.name, field.message.context);
+            eprintln!(
+                "FIELD_ORDER index={} wanted={}/{} actual={}/{}",
+                self.index, name, context, field.message.name, field.message.context
+            );
             return Err(FpError::Range {
                 context: "transcript-field-order",
             });
@@ -220,6 +225,19 @@ impl<'a> Cursor<'a> {
         self.take_root_at(context, None)
     }
 
+    pub(crate) fn alias_root(&mut self, context: &str, root: Digest) {
+        self.roots.insert(context.into(), vec![root]);
+    }
+
+    pub(crate) fn alias_tree_root(&mut self, context: &str, tree_number: u32, root: Digest) {
+        self.roots
+            .insert(format!("{context}#{tree_number}"), vec![root]);
+    }
+
+    pub(crate) fn alias_root_run(&mut self, context: &str, run: Digest) {
+        self.root_runs.insert(context.into(), run);
+    }
+
     /// Takes a committed root. `number` is the tree's global number, when the
     /// caller tracks it: the first numbered root of a context fixes the base
     /// that openings subtract to find their root among the context's roots.
@@ -238,7 +256,11 @@ impl<'a> Cursor<'a> {
         self.roots.entry(context.into()).or_default().push(root);
         #[cfg(feature = "std")]
         if context == "Omega, stage 1" {
-            eprintln!("RUST_RECV_ROOT offset={} root={}", self.offset, root.to_hex());
+            eprintln!(
+                "RUST_RECV_ROOT offset={} root={}",
+                self.offset,
+                root.to_hex()
+            );
         }
         Ok(root)
     }
@@ -302,7 +324,10 @@ impl<'a> Cursor<'a> {
             context: "opening-overflow",
         })?;
         #[cfg(feature = "std")]
-        eprintln!("RUST_OPEN_SIZE tree={} log_n={} columns={} given={}", first.tree_number, first.log_n, opening_len, path_len);
+        eprintln!(
+            "RUST_OPEN_SIZE tree={} log_n={} columns={} given={}",
+            first.tree_number, first.log_n, opening_len, path_len
+        );
         if end > self.bytes.len() {
             return Err(FpError::Truncated {
                 context: "opening-bytes",
@@ -334,25 +359,28 @@ impl<'a> Cursor<'a> {
                 context: "opening-field-sequence",
             });
         }
+        #[cfg(feature = "std")]
+        eprintln!("RUST_OPEN_LOOKUP context={} root_context={} registered={:?} bases={:?} configuration={}", context, first.root_context, self.roots.keys().collect::<Vec<_>>(), self.root_bases, self.configuration.to_hex());
         let root = self
             .roots
-            .get(&first.root_context)
-            .and_then(|roots| {
-                if roots.len() == 1 {
-                    roots.first()
-                } else if let Some(base) = self.root_bases.get(&first.root_context) {
-                    // Numbered trees: the root of tree N is N - base among the
-                    // context's roots, which are registered in commit order.
-                    let index = first.tree_number.checked_sub(*base)? as usize;
-                    roots.get(index)
-                } else {
-                    let index = if first.tree_number == 2 || first.tree_number >= 6 {
-                        1
+            .get(&format!("{}#{}", first.root_context, first.tree_number))
+            .and_then(|roots| roots.first())
+            .or_else(|| {
+                self.roots.get(&first.root_context).and_then(|roots| {
+                    if roots.len() == 1 {
+                        roots.first()
+                    } else if let Some(base) = self.root_bases.get(&first.root_context) {
+                        let index = first.tree_number.checked_sub(*base)? as usize;
+                        roots.get(index)
                     } else {
-                        0
-                    };
-                    Some(&roots[index])
-                }
+                        let index = if first.tree_number == 2 || first.tree_number >= 6 {
+                            1
+                        } else {
+                            0
+                        };
+                        Some(&roots[index])
+                    }
+                })
             })
             .ok_or(FpError::Range {
                 context: "opening-root-missing",
@@ -360,13 +388,25 @@ impl<'a> Cursor<'a> {
         let leaf_start = if first.stored {
             &self.configuration
         } else {
-            run
+            self.root_runs.get(&first.root_context).unwrap_or(run)
         };
         #[cfg(feature = "std")]
-        eprintln!("OPEN_CHECK context={} root_context={} stored={} tree={} run={}", context, first.root_context, first.stored, first.tree_number, run.to_hex());
+        eprintln!(
+            "OPEN_CHECK context={} root_context={} stored={} tree={} run={}",
+            context,
+            first.root_context,
+            first.stored,
+            first.tree_number,
+            run.to_hex()
+        );
         #[cfg(feature = "std")]
         if first.tree_number == 5 {
-            eprintln!("RUST_FRESH_COLUMN {:?} salt={:?}", &self.bytes[opening_start..opening_start + 16], &self.bytes[opening_start + first.leaf_bytes as usize..opening_start + first.leaf_bytes as usize + 8]);
+            eprintln!(
+                "RUST_FRESH_COLUMN {:?} salt={:?}",
+                &self.bytes[opening_start..opening_start + 16],
+                &self.bytes[opening_start + first.leaf_bytes as usize
+                    ..opening_start + first.leaf_bytes as usize + 8]
+            );
         }
         verify_opening(
             root,
@@ -388,6 +428,7 @@ impl<'a> Cursor<'a> {
             leaf_bytes: first.leaf_bytes as usize,
             log_n: first.log_n,
             tree_number: first.tree_number,
+            root_context: first.root_context.clone(),
         });
         self.openings.push((context, positions.to_vec()));
         Ok(())

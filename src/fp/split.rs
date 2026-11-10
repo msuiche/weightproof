@@ -28,13 +28,17 @@ pub fn split_verify(
         || !member(statement, first_group, mask_message)
         || !member(statement, second_group, mask_message)
     {
-        return Err(FpError::Range { context: "split-shape" });
+        return Err(FpError::Range {
+            context: "split-shape",
+        });
     }
     let side = |oracle| -> Result<bool, FpError> {
         let first = member(statement, first_group, oracle);
         let second = member(statement, second_group, oracle);
         if first == second {
-            Err(FpError::Range { context: "split-membership" })
+            Err(FpError::Range {
+                context: "split-membership",
+            })
         } else {
             Ok(first)
         }

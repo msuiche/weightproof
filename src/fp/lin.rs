@@ -174,14 +174,11 @@ pub(crate) fn read_binding_root(
     configuration: &Digest,
     seal: &Digest,
 ) -> Result<LinBindingRoot, FpError> {
-    let place = u64::from_le_bytes(
-        cursor
-            .take("place in the batch", "")?
-            .try_into()
-            .map_err(|_| FpError::BadLength {
-                context: "binding-place",
-            })?,
-    );
+    let place = u64::from_le_bytes(cursor.take("place in the batch", "")?.try_into().map_err(
+        |_| FpError::BadLength {
+            context: "binding-place",
+        },
+    )?);
     if place >= (1u64 << shape.log_leaves) {
         return Err(FpError::Range {
             context: "binding-place",
