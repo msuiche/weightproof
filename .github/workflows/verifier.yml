@@ -35,6 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch FlashProve ground-truth fixtures
+        run: git clone --depth 1 https://github.com/anthropics/FlashProve.git spikes/flashprove
       - name: Test ICICLE kernels and statement-bound proofs
         run: cargo test --locked --features icicle-prover
       - name: Benchmark ICICLE multilinear block proofs
