@@ -325,7 +325,9 @@ fold also computes the next round's coefficients from the folded values. Three
 A/B runs for an 8,192-pair proof improved from 2.24/1.74/2.25 ms to
 2.09/1.66/2.08 ms with byte-identical proof bytes. Dot-product proofs also
 reuse their per-thread stream and buffers across proofs; isolated
-create/upload/drop cycles improved from 183.8-246.1 us to 21.8-22.3 us.
+create/upload/drop cycles improved from 183.8-246.1 us to 21.8-22.3 us. The
+8,192-element dense-fold regression test runs on both default and native
+backends; default Rust has 133 passing tests.
 Native CUDA and default Rust produce byte-identical multilinear block proofs
 with the same SHA-256 above. The standalone CUDA test
 also checks 512 outputs at each of ten strides against independent 128-bit host

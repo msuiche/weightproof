@@ -149,5 +149,7 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   Generic fold chains also reuse one per-thread context and alternate buffers.
   Dot-product proofs reuse their stream and buffers across proofs too, reducing
   isolated create/upload/drop cycles from 183.8-246.1 us to 21.8-22.3 us.
+  Default Rust executes large dense folds at every size, with the same
+  8,192-element regression test on both backends and 133 passing tests.
   Next: import an available PTX model for compiler/hardware semantics and scale
   benchmarks to the 8B serving model.

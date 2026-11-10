@@ -168,7 +168,8 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
   thirteen-challenge 8,192-element chain from 208–241 us to 119–130 us.
   Dot-product proofs also retain their stream and buffers across proofs,
   reducing isolated create/upload/drop cycles from 183.8-246.1 us to
-  21.8-22.3 us.
+  21.8-22.3 us. Large dense folds run on default Rust at every size; the
+  8,192-element regression test executes on both default and native backends.
 
 ## Decision register
 

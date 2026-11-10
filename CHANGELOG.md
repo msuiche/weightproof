@@ -12,6 +12,7 @@
 - Keep large dot-product witnesses resident across CUDA rounds, computing the next round's coefficients from folded values in the same launch; reduce an 8,192-pair proof from 2.24 ms to 2.08 ms with byte-identical proofs.
 - Reuse a per-thread resident context for generic fold chains and large dense tensors, reducing a thirteen-challenge 8,192-element chain from 208–241 us to 119–130 us.
 - Reuse dot-product streams and buffers across proofs, reducing isolated create/upload/drop cycles from 183.8-246.1 us to 21.8-22.3 us.
+- Run large dense folds in default Rust as well as native CUDA, fixing `base-linear-claim` verification for 8,192-element tensors and covering both backends with the same regression test.
 - Execute the complete 139-test suite on an NVIDIA GB10 and generate `sm_121` PTX.
 - Reuse per-thread CUDA buffers and streams, with mapped transfers for proving and copies for verification, to reduce small-model block proving to 5.82 ms and verification to 5.73 ms while preserving byte-identical proofs.
 - Measure four-layer, feed-forward-width-8, eight-token-window proofs on Rust and native CUDA without labeling the fixture as an 8B model.

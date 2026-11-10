@@ -181,7 +181,10 @@ All 139 native tests pass: 132 unit tests and 7 ground-truth integration tests.
 is allocated per chain. Thirteen challenges on an 8,192-element chain took
 208–241 us before residency and 119–130 us after, with identical outputs.
 The complete suite now has 139 tests: 132 unit tests and 7 ground-truth
-integration tests.
+integration tests. Non-native builds run the same large dense-fold loop at
+every size; skipping it caused `base-linear-claim` failures. The 8,192-element
+regression test now runs on both backends, and the default suite has 133
+passing tests.
 
 ### Cross-proof dot-context residency
 

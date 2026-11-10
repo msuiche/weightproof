@@ -253,7 +253,7 @@ impl Tensor {
                 .download(&mut values)
                 .expect("native CUDA dense-fold download failed");
         }
-        if n < 8192 {
+        if n < 8192 || !cfg!(feature = "native-cuda") {
             for i in (0..self.dense_vars.len()).rev() {
                 let variable = self.dense_vars[i];
                 if variable >= count {
@@ -715,7 +715,6 @@ mod tests {
         assert_eq!(tensor.at(1), E([18, 0, 0]));
     }
 
-    #[cfg(feature = "native-cuda")]
     #[test]
     fn large_dense_fold_matches_rust() {
         let mut tensor = Tensor::eq(&[], E([2, 0, 0]));
