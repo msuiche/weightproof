@@ -33,6 +33,8 @@ jobs:
 
   icicle:
     runs-on: ubuntu-latest
+    env:
+      CXXFLAGS: -include cstdint
     steps:
       - uses: actions/checkout@v4
       - name: Fetch FlashProve ground-truth fixtures
