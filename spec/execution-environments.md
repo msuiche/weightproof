@@ -80,7 +80,10 @@ checks 512 outputs at each stride 1 through 512 against independent full-precisi
 `cuda`, and `gb10`. It runs as the user-level `weightproof-actions.service`, not
 as root. The runner uses `/home/msuiche/actions-runner` and the same CUDA/Rust
 PATH shown above. The `cuda` job in `.github/workflows/verifier.yml` runs
-`make -C cuda check` and `cargo test --locked --features native-cuda`.
+`make -C cuda check` and `cargo test --locked --features native-cuda`. Native CI
+also clones FlashProve before compiling so every `include_bytes!` fixture is
+available. Ubuntu 26 fuzz jobs explicitly use `x86_64-unknown-linux-gnu` because
+the default musl target is incompatible with ASan's static libc.
 
 For security, the native job is gated with `github.event_name != 'pull_request'`.
 It runs only on pushes and manual dispatch, so pull requests cannot execute
