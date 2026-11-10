@@ -87,6 +87,16 @@ checks 512 outputs at each stride 1 through 512 against independent full-precisi
   The persistent implementation passes the same 134 tests and preserves the
   byte-identical proof digest above.
 
+### Rejected host-allocation experiment
+
+A subsequent experiment passed extension slices directly through a `repr(C)`
+layout, folded in place, and reused the paired host buffer. It passed all 134
+CUDA tests but regressed block verification from 5.80 ms to 7.76 ms; proving was
+7.88 ms versus 7.78 ms. The changes were reverted and not included in the pushed
+implementation. The 7.78/5.80 ms persistent-device context remains the accepted
+baseline. Further work should profile stream/copy latency before trying more
+host-layout changes.
+
 ## Formal and PTX evidence
 
 `formal/GpuFold.lean` proves the fused cubic-extension fold and multilinear
