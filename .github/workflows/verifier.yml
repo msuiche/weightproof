@@ -81,5 +81,5 @@ jobs:
         run: |
           cd fuzz
           for target in fp_request fp_policy fp_proof_head fp_layout fp_compact_proof; do
-            cargo fuzz run "$target" -- -max_total_time=60 -timeout=5
+            cargo fuzz run "$target" --target x86_64-unknown-linux-gnu -- -max_total_time=60 -timeout=5
           done
