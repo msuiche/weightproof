@@ -40,6 +40,19 @@ jobs:
       - name: Benchmark ICICLE multilinear block proofs
         run: cargo bench --locked --features icicle-prover --bench block_proof -- --sample-size 10 --measurement-time 1 --warm-up-time 0.1
 
+  cuda:
+    # Never execute pull-request code on the persistent GPU host.
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, cuda, gb10]
+    env:
+      PATH: /usr/local/cuda/bin:/home/msuiche/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check native CUDA kernel and PTX
+        run: make -C cuda check
+      - name: Test native CUDA proofs
+        run: cargo test --locked --features native-cuda
+
   formal:
     runs-on: ubuntu-latest
     steps:

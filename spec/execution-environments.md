@@ -74,6 +74,24 @@ cargo bench --locked --features native-cuda --bench block_proof -- \
 checks 512 outputs at each stride 1 through 512 against independent full-precision
 128-bit host arithmetic. NVCC targets `sm_121` on this machine.
 
+### Self-hosted CI
+
+`dgx1-weightproof` is registered with labels `self-hosted`, `Linux`, `ARM64`,
+`cuda`, and `gb10`. It runs as the user-level `weightproof-actions.service`, not
+as root. The runner uses `/home/msuiche/actions-runner` and the same CUDA/Rust
+PATH shown above. The `cuda` job in `.github/workflows/verifier.yml` runs
+`make -C cuda check` and `cargo test --locked --features native-cuda`.
+
+For security, the native job is gated with `github.event_name != 'pull_request'`.
+It runs only on pushes and manual dispatch, so pull requests cannot execute
+arbitrary code on the persistent GPU host. Check registration and service health
+with:
+
+```bash
+gh api repos/msuiche/weightproof/actions/runners
+ssh dgx1 'systemctl --user status weightproof-actions.service --no-pager'
+```
+
 ## Verified native-CUDA results (2026-11-09)
 
 - 134 tests pass: 127 unit tests and 7 ground-truth integration tests.

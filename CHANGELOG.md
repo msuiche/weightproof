@@ -13,4 +13,4 @@
 - Document local, CPU-backend, and DGX CUDA execution environments, verification commands, performance baselines, and PTX safety evidence.
 
 ### Infrastructure
-- Add Criterion block and kernel benchmarks, parser fuzz targets, CI fuzzing, ICICLE tests, and pinned Lean checks.
+- Add Criterion block and kernel benchmarks, parser fuzz targets, CI fuzzing, ICICLE tests, pinned Lean checks, and a self-hosted GB10 runner restricted to trusted pushes.
