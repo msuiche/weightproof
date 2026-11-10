@@ -130,9 +130,14 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   ICICLE-enabled tests pass, and Rust/ICICLE multilinear block proofs are
   byte-identical.
   `formal/GpuFold.lean` proves universal fused-fold and quadratic-dot-round
-  correctness plus non-vacuity without `sorry` or user axioms. `native-cuda`
-  builds the fixed NVCC kernel through a scoped FFI; all 134 tests pass on the
-  GB10 and native-CUDA proofs are byte-identical to Rust. PTX launch, termination,
-  UB, and synchronization evidence is recorded in `spec/ptx-review.md`.
-  Next: mechanize that fixed kernel in SF Tensor's Lean model, remove per-fold
-  allocation/copies, and scale benchmarks to the 8B serving model.
+  correctness plus non-vacuity without `sorry` or user axioms. A canonical
+  Goldilocks/cubic-extension model and the fixed CUDA launch now also have
+  universal per-thread correctness, input-bound, inactive-thread, and
+  non-vacuity proofs. This closes the source-level field/index gap, not the
+  machine-word or PTX semantics gap; SF Tensor has not published its Lean model.
+  `native-cuda` builds the fixed NVCC kernel through a scoped FFI; all 134 tests
+  pass on the GB10 and native-CUDA proofs are byte-identical to Rust. PTX launch,
+  termination, UB, and synchronization evidence is recorded in
+  `spec/ptx-review.md`.
+  Next: prove the exact machine-word reductions or import an available PTX model,
+  remove per-fold allocation/copies, and scale benchmarks to the 8B serving model.

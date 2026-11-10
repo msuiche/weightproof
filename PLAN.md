@@ -148,7 +148,11 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
   emits quadratic multilinear rounds with epsilon scaling and zero-padded witness
   tensors; `fold_low_pair_once` batches both witness vectors, and ICICLE-backed
   proving is byte-identical to Rust. `formal/GpuFold.lean` proves the fused-fold
-  and quadratic-round equations with non-vacuity witnesses.
+  and quadratic-round equations with non-vacuity witnesses. It also proves
+  canonical Goldilocks extension folding, per-thread input bounds,
+  active/inactive behavior, and non-vacuity for the fixed CUDA launch. This is
+  an exact source-level model, not a PTX proof; the SF Tensor implementation is
+  not publicly available.
   `fp_compact_proof` completed
   1,583 libFuzzer cases without a panic and is registered in CI with the other
   parser targets. All five targets pass locally; `fp_layout` was restored in

@@ -117,8 +117,18 @@ NVCC 13.0.88 generates PTX 9.0 for `sm_121` on the NVIDIA GB10.
   accepted/mutated key/request fixtures, not an isolated arithmetic benchmark.
 - Rust and native-CUDA multilinear block proofs are byte-identical.
 
-`formal/GpuFold.lean` proves the integer-lift equations; the PTX inspection above
-is the reviewed termination/UB/memory-visibility evidence, not a mechanized PTX
-proof. Importing this fixed kernel into SF Tensor's Lean memory model remains the
-formalization step. Scaling to the 8B serving model and eliminating per-fold
-allocation/copies are separate performance work, not correctness assumptions.
+`formal/GpuFold.lean` proves the integer-lift equations and their canonical
+Goldilocks/cubic-extension counterparts. `Kernel.Launch` additionally models the
+fixed kernel's guards and source-level index arithmetic: every active thread's
+two checked loads are proved in bounds, `runThread_correct` proves its output
+against the independent reference fold, inactive threads perform no load/store,
+and a concrete valid launch proves non-vacuity. Lean reports no `sorryAx` or
+user-added axioms for these theorems. This is a self-contained source-level
+model, not a PTX memory-model proof: SF Tensor has published its paper but not
+its Lean implementation, so no direct reuse is claimed. The CUDA `add`, `sub`,
+and 128-bit `reduce128` machine-word implementations, compiler lowering, and
+hardware remain covered by the reviewed guards and differential evidence above.
+Mechanizing those layers requires an available PTX model or a separate exact
+machine-word development. Scaling to the 8B serving model and eliminating
+per-fold allocation/copies are separate performance work, not correctness
+assumptions.
