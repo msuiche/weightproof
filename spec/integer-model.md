@@ -268,11 +268,11 @@ and independent verification in release mode. The multilinear Rust baseline is
 **2.94 ms proving** and **3.11 ms verification**. ICICLE CPU takes **9.02 ms**
 and **6.26 ms** after pairing both witness vectors into one fold per round;
 unpaired folds took 14.73 ms and 9.26 ms. Native CUDA on the GB10 takes
-**7.78 ms proving** and **5.80 ms verification** with persistent per-thread
-buffers and streams, down from 9.76 ms and 7.74 ms with per-fold allocation.
-The valid four-layer/feed-forward-8/window-8 scaling fixture takes 4.59 ms/4.86 ms
-on local Rust and 21.80 ms/15.95 ms on native CUDA (prove/verify). It is not an
-8B result; no 8B fixture or loader is present. CI runs the same benchmark with a short
+**5.82 ms proving** and **5.73 ms verification** with operation-specific
+mapped/copy transfer paths and persistent per-thread buffers, down from 7.78 ms
+and 5.80 ms with copies alone. The scaled fixture takes 21.98 ms/17.20 ms
+(prove/verify) over 30 samples. The earlier 7.78/5.80 ms and 21.80/15.95 ms
+baselines used per-fold copy calls for every operation. CI runs the same benchmark with a short
 sample, including two-layer and two-request cases.
 
 ## 11. M2 kernel lane

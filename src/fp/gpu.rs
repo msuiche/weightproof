@@ -372,6 +372,20 @@ mod tests {
             &mut extension_actual,
         )
         .is_err());
+
+        #[cfg(feature = "native-cuda")]
+        {
+            crate::fp::native_cuda::set_mapped(true);
+            dense_fold_extension(
+                &extension_values,
+                extension_challenge,
+                1,
+                &mut extension_actual,
+            )
+            .unwrap();
+            assert_eq!(extension_actual, extension_expected);
+            crate::fp::native_cuda::set_mapped(false);
+        }
     }
 
     #[test]

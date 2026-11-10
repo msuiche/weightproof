@@ -83,9 +83,19 @@ checks 512 outputs at each stride 1 through 512 against independent full-precisi
   SHA-256 `04d95d7500f779145f1018a711496f318d1baa257b5ebada780640a0ea92c7ea`.
 - Pre-persistent baseline: 9.76 ms proving and 7.74 ms verification for the
   small-model block. Persistent per-thread buffers and streams reduce this to
-  **7.78 ms proving** and **5.80 ms verification** (−20.3% and −25.1%).
-  The persistent implementation passes the same 134 tests and preserves the
-  byte-identical proof digest above.
+  **5.82 ms proving** and **5.73 ms verification**. Proving uses mapped host
+  memory; verification uses explicit copies. The persistent implementation
+  passes the same 134 tests and preserves the byte-identical proof digest above.
+
+### Profiling and transfer selection
+
+Nsight Systems shows that the original copy-heavy path spends about 3.98 us per
+`cudaLaunchKernel`, 5.68 us per `cudaMemcpyAsync`, and 1.61 us executing the fold
+kernel. Pinned staging alone regressed proving by 21.5% and was rejected. Mapped
+memory helped proving but hurt verification, so `prove_block_forest` selects
+mapped transfers and `verify_block_forest` selects copies. Both paths are tested
+independently. Thirty-sample results are 5.82/5.73 ms for the small block and
+21.98/17.20 ms for the larger fixture (prove/verify).
 
 ### Rejected host-allocation experiment
 

@@ -15,6 +15,7 @@ struct CExt {
 }
 
 unsafe extern "C" {
+    fn wp_fold_cuda_set_mapped(mapped: bool);
     fn wp_fold_cuda(
         input: *const CExt,
         input_count: usize,
@@ -23,6 +24,10 @@ unsafe extern "C" {
         low_half: usize,
         challenge: CExt,
     ) -> i32;
+}
+
+pub fn set_mapped(mapped: bool) {
+    unsafe { wp_fold_cuda_set_mapped(mapped) }
 }
 
 fn call(

@@ -112,9 +112,10 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
 - **Baseline:** multilinear small-model release benchmarks: Rust 2.94 ms proving
   and 3.11 ms verification; ICICLE CPU 9.02 ms and 6.26 ms after pairing witness
   folds (down from 14.73 ms and 9.26 ms). Native CUDA with persistent per-thread
-  buffers/streams: 7.78 ms proving and 5.80 ms verification on the GB10, down
-  from 9.76 ms and 7.74 ms with per-fold allocation. The four-layer/f8/window-8
-  scaling benchmark takes 4.59/4.86 ms locally and 21.80/15.95 ms on the GB10;
+  buffers/streams and operation-specific transfer paths: 5.82 ms proving and
+  5.73 ms verification on the GB10, down from 7.78 ms and 5.80 ms with copies
+  alone. The four-layer/f8/window-8 benchmark takes 4.59/4.86 ms locally and
+  21.98/17.20 ms on the GB10 over 30 samples;
   it is not an 8B result because no 8B fixture or loader is present.
   CI includes two-layer and two-request cases.
 - **M2 kernel lane:** ICICLE v4 selected; `fp::gpu::sumcheck_fold` and the

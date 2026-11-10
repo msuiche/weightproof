@@ -105,10 +105,11 @@ NVCC 13.0.88 generates PTX 9.0 for `sm_121` on the NVIDIA GB10.
   input, exact output length, power-of-two stride, and stride no larger than the
   output half. These guards discharge the identified division and out-of-bounds
   risks for accepted launches.
-- Host-to-device copy, kernel launch, and device-to-host copy are ordered on one
-  per-thread CUDA stream. `cudaGetLastError` and `cudaStreamSynchronize` run before
-  any host output is returned. Device buffers and the stream are reused, and no
-  later read depends on an unsynchronized kernel write.
+- Proving uses mapped host input/output; verification uses explicit H2D/D2H copies.
+  Each path uses one per-thread CUDA stream. `cudaGetLastError` and
+  `cudaStreamSynchronize` run before any host output is returned. Device and
+  mapped host buffers are reused, and no later read depends on an unsynchronized
+  kernel write.
 - The standalone test checks 512 outputs at each stride 1, 2, 4, ..., 512 against
   independent full-precision 128-bit host arithmetic, and checks non-vacuity.
 - The Rust `sumcheck_fold_matches_rust_on_cuda` test and the complete 134-test

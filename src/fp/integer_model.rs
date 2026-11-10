@@ -2382,6 +2382,8 @@ pub fn prove_block_forest(
     kf: u32,
     eps_f: i128,
 ) -> Option<BlockProof> {
+    #[cfg(feature = "native-cuda")]
+    crate::fp::native_cuda::set_mapped(true);
     let (statement, trace) = bind_block(model, tokens, mf, kf, eps_f)?;
     let query = m1_first_query(&statement)?;
     let mut chain = crate::fp::chain::Chain::new(query);
@@ -2463,6 +2465,8 @@ pub fn prove_block_forest(
 /// Recompute the block statement and verify its forest transcript with the
 /// existing `forest_pad` verifier.
 pub fn verify_block_forest(model: &DenseModel, tokens: &[usize], proof: &BlockProof) -> bool {
+    #[cfg(feature = "native-cuda")]
+    crate::fp::native_cuda::set_mapped(false);
     if proof.statement.format_version != 1 {
         return false;
     }

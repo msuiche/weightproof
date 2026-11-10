@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 namespace {
@@ -139,13 +140,20 @@ __global__ void fold_kernel(
 struct FoldContext {
     Ext* device_input = nullptr;
     Ext* device_output = nullptr;
+    Ext* host_input = nullptr;
+    Ext* host_output = nullptr;
     std::size_t input_capacity = 0;
     std::size_t output_capacity = 0;
+    std::size_t host_input_capacity = 0;
+    std::size_t host_output_capacity = 0;
     cudaStream_t stream = nullptr;
+    bool mapped = false;
 
     ~FoldContext() {
         cudaFree(device_input);
         cudaFree(device_output);
+        cudaFreeHost(host_input);
+        cudaFreeHost(host_output);
         if (stream != nullptr) {
             cudaStreamDestroy(stream);
         }
@@ -166,6 +174,25 @@ cudaError_t reserve(Ext*& buffer, std::size_t& capacity, std::size_t count) {
         capacity = count;
     }
     return status;
+}
+
+cudaError_t reserve_pinned(Ext*& buffer, std::size_t& capacity, std::size_t count) {
+    if (count <= capacity) {
+        return cudaSuccess;
+    }
+    Ext* replacement = nullptr;
+    const cudaError_t status = cudaHostAlloc(
+        reinterpret_cast<void**>(&replacement), count * sizeof(Ext), cudaHostAllocMapped);
+    if (status == cudaSuccess) {
+        cudaFreeHost(buffer);
+        buffer = replacement;
+        capacity = count;
+    }
+    return status;
+}
+
+extern "C" void wp_fold_cuda_set_mapped(bool mapped) {
+    fold_context.mapped = mapped;
 }
 
 extern "C" int wp_fold_cuda(
@@ -193,32 +220,54 @@ extern "C" int wp_fold_cuda(
             return status;
         }
     }
-    cudaError_t status = reserve(context.device_input, context.input_capacity, input_count);
-    if (status != cudaSuccess) {
-        return status;
-    }
-    status = reserve(context.device_output, context.output_capacity, output_count);
-    if (status != cudaSuccess) {
-        return status;
-    }
-    status = cudaMemcpyAsync(
-        context.device_input,
-        input,
-        input_count * sizeof(Ext),
-        cudaMemcpyHostToDevice,
-        context.stream);
-    if (status == cudaSuccess) {
-        const int threads = 256;
-        const int blocks = static_cast<int>((output_count + threads - 1) / threads);
-        fold_kernel<<<blocks, threads, 0, context.stream>>>(
+    cudaError_t status = cudaSuccess;
+    if (context.mapped) {
+        status = reserve_pinned(context.host_input, context.host_input_capacity, input_count);
+        if (status != cudaSuccess) {
+            return status;
+        }
+        status = reserve_pinned(context.host_output, context.host_output_capacity, output_count);
+        if (status != cudaSuccess) {
+            return status;
+        }
+        memcpy(context.host_input, input, input_count * sizeof(Ext));
+    } else {
+        status = reserve(context.device_input, context.input_capacity, input_count);
+        if (status != cudaSuccess) {
+            return status;
+        }
+        status = reserve(context.device_output, context.output_capacity, output_count);
+        if (status != cudaSuccess) {
+            return status;
+        }
+        status = cudaMemcpyAsync(
             context.device_input,
-            context.device_output,
-            output_count,
-            low_half,
-            challenge);
+            input,
+            input_count * sizeof(Ext),
+            cudaMemcpyHostToDevice,
+            context.stream);
+    }
+    const int threads = 256;
+    const int blocks = static_cast<int>((output_count + threads - 1) / threads);
+    if (status == cudaSuccess) {
+        if (context.mapped) {
+            fold_kernel<<<blocks, threads, 0, context.stream>>>(
+                context.host_input,
+                context.host_output,
+                output_count,
+                low_half,
+                challenge);
+        } else {
+            fold_kernel<<<blocks, threads, 0, context.stream>>>(
+                context.device_input,
+                context.device_output,
+                output_count,
+                low_half,
+                challenge);
+        }
         status = cudaGetLastError();
     }
-    if (status == cudaSuccess) {
+    if (status == cudaSuccess && !context.mapped) {
         status = cudaMemcpyAsync(
             output,
             context.device_output,
@@ -228,6 +277,9 @@ extern "C" int wp_fold_cuda(
     }
     if (status == cudaSuccess) {
         status = cudaStreamSynchronize(context.stream);
+    }
+    if (status == cudaSuccess && context.mapped) {
+        memcpy(output, context.host_output, output_count * sizeof(Ext));
     }
     return status;
 }
@@ -292,10 +344,14 @@ int main() {
         input[i].c[2] = canonical(i * 0x94d049bb133111ebULL);
     }
     const Ext challenge{{7, 11, 13}};
-    for (std::size_t stride = 1; stride <= 512; stride *= 2) {
-        const int result = run_stride(input, challenge, stride);
-        if (result != 0) {
-            return result;
+    for (int mapped = 0; mapped <= 1; ++mapped) {
+        wp_fold_cuda_set_mapped(mapped != 0);
+        std::printf("transfer mode: %s\n", mapped == 0 ? "copies" : "mapped");
+        for (std::size_t stride = 1; stride <= 512; stride *= 2) {
+            const int result = run_stride(input, challenge, stride);
+            if (result != 0) {
+                return result;
+            }
         }
     }
     return 0;
