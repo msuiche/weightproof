@@ -321,6 +321,46 @@ mod tests {
     }
 
     #[test]
+    fn dot_state_reinitializes_per_thread_context() {
+        for proof in 0..2u64 {
+            let a: Vec<E> = (0..8192u64)
+                .map(|i| {
+                    E::from_base(F::from_u64(
+                        (i + proof * 17).wrapping_mul(0x9e37_79b9_7f4a_7c15),
+                    ))
+                })
+                .collect();
+            let b: Vec<E> = (0..8192u64)
+                .map(|i| {
+                    E::from_base(F::from_u64(
+                        (i + proof * 31).wrapping_mul(0xd1b5_4a32_d192_ed03),
+                    ))
+                })
+                .collect();
+            let expected_coefficients =
+                a.chunks_exact(2)
+                    .zip(b.chunks_exact(2))
+                    .fold([E::ZERO; 3], |mut sums, (a, b)| {
+                        sums[0] += a[0] * b[0];
+                        sums[1] += a[1] * b[1];
+                        sums[2] += (a[1] - a[0]) * (b[1] - b[0]);
+                        sums
+                    });
+            let expected_a: Vec<E> = a.chunks_exact(2).map(|pair| pair[0]).collect();
+            let expected_b: Vec<E> = b.chunks_exact(2).map(|pair| pair[0]).collect();
+
+            let mut state = DotState::new(&a, &b).unwrap();
+            assert_eq!(state.coefficients().unwrap(), expected_coefficients);
+            state.fold(E::ZERO).unwrap();
+            let mut actual_a = a.clone();
+            let mut actual_b = b.clone();
+            state.download(&mut actual_a, &mut actual_b).unwrap();
+            assert_eq!(&actual_a[..expected_a.len()], expected_a);
+            assert_eq!(&actual_b[..expected_b.len()], expected_b);
+        }
+    }
+
+    #[test]
     fn fold_state_strided_rounds_match_rust() {
         let values: Vec<E> = (0..8192u64)
             .map(|i| {

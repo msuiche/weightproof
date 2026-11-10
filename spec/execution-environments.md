@@ -97,7 +97,7 @@ ssh dgx1 'systemctl --user status weightproof-actions.service --no-pager'
 
 ## Verified native-CUDA results (2026-11-09)
 
-- 138 tests pass: 131 unit tests and 7 ground-truth integration tests.
+- 139 tests pass: 132 unit tests and 7 ground-truth integration tests.
 - The suite includes real quadratic multilinear block proving, accepted proofs,
   statement mutations, and request-proof rejection.
 - Native CUDA and default Rust produce byte-identical multilinear proofs with
@@ -106,7 +106,7 @@ ssh dgx1 'systemctl --user status weightproof-actions.service --no-pager'
   small-model block. Persistent per-thread buffers and streams reduce this to
   **5.82 ms proving** and **5.73 ms verification**. Proving uses mapped host
   memory; verification uses explicit copies. The persistent implementation
-  passes the same 138 tests and preserves the byte-identical proof digest above.
+  passes the same 139 tests and preserves the byte-identical proof digest above.
 
 ### Profiling and transfer selection
 
@@ -130,7 +130,7 @@ host-layout changes.
 
 ### Rejected scratch and polling experiments
 
-Per-thread `RefCell` conversion buffers passed all 138 CUDA tests but were mostly
+Per-thread `RefCell` conversion buffers passed all 139 CUDA tests but were mostly
 0.5–2% slower in repeated low-load A/B pairs, so they were reverted. Replacing
 `cudaStreamSynchronize` with a `cudaStreamQuery` polling loop was neutral and was
 also reverted. Nsight showed that round-boundary launch/synchronization overhead
@@ -172,7 +172,7 @@ Three interleaved A/B runs for a complete 8,192-pair PSC proof gave baseline
 2.24/1.74/2.25 ms and resident 2.09/1.66/2.08 ms (baseline/resident ranges
 1.74–2.25 ms and 1.66–2.09 ms). The large proof bytes are identical with SHA-256
 `820fc388ddd948216ea3c99e2f0d127f139407240cab6d40d35b255027bd7922`.
-All 138 native tests pass: 131 unit tests and 7 ground-truth integration tests.
+All 139 native tests pass: 132 unit tests and 7 ground-truth integration tests.
 
 ### Generic resident fold chains
 
@@ -180,8 +180,21 @@ All 138 native tests pass: 131 unit tests and 7 ground-truth integration tests.
 `SeriesContext`, including its stream and alternate buffers. No stream or buffer
 is allocated per chain. Thirteen challenges on an 8,192-element chain took
 208–241 us before residency and 119–130 us after, with identical outputs.
-The complete suite now has 138 tests: 131 unit tests and 7 ground-truth
+The complete suite now has 139 tests: 132 unit tests and 7 ground-truth
 integration tests.
+
+### Cross-proof dot-context residency
+
+Large dot-product proofs also reuse a per-thread `DotContext`, including its
+stream, coefficient buffer, and alternate witness buffers. Each proof resets
+the logical length and current buffer and uploads fresh witnesses; capacity is
+retained until thread exit. Sequential-proof tests check fresh coefficients
+and folded outputs after reinitialization.
+
+Five interleaved 200-iteration measurements of an 8,192-pair
+create/upload/drop cycle cost 183.8-246.1 us before reuse and 21.8-22.3 us
+after. This is an isolated initialization result; shared-GPU full-proof
+samples remained bimodal and are not used to claim a new end-to-end timing.
 
 ### Larger model/window benchmark
 

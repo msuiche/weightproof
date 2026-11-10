@@ -4,7 +4,6 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
-#include <new>
 #include <utility>
 
 namespace {
@@ -403,17 +402,20 @@ extern "C" void wp_series_cuda_destroy(void* opaque) {
     }
 }
 
+thread_local DotContext dot_context;
+
 extern "C" void* wp_dot_cuda_create(const Ext* a, const Ext* b, std::size_t count) {
     if (a == nullptr || b == nullptr || count == 0 || count % 2 != 0) {
         return nullptr;
     }
-    DotContext* context = new (std::nothrow) DotContext();
-    if (context == nullptr) {
-        return nullptr;
-    }
+    DotContext* context = &dot_context;
     context->count = count;
-    cudaError_t status = cudaStreamCreate(&context->stream);
-    if (status == cudaSuccess) {
+    context->current = 0;
+    cudaError_t status = cudaSuccess;
+    if (context->stream == nullptr) {
+        status = cudaStreamCreate(&context->stream);
+    }
+    if (status == cudaSuccess && context->coefficients == nullptr) {
         status = cudaMalloc(
             reinterpret_cast<void**>(&context->coefficients), 3 * sizeof(Ext));
     }
@@ -441,7 +443,6 @@ extern "C" void* wp_dot_cuda_create(const Ext* a, const Ext* b, std::size_t coun
         status = cudaStreamSynchronize(context->stream);
     }
     if (status != cudaSuccess) {
-        delete context;
         return nullptr;
     }
     return context;
@@ -540,7 +541,6 @@ extern "C" void wp_dot_cuda_destroy(void* opaque) {
     if (opaque != nullptr) {
         DotContext* context = static_cast<DotContext*>(opaque);
         cudaStreamSynchronize(context->stream);
-        delete context;
     }
 }
 

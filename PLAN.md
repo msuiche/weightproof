@@ -166,6 +166,9 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
   coefficients from the folded values, with an explicit Lean composition proof.
   Generic fold chains reuse a per-thread series context, reducing a
   thirteen-challenge 8,192-element chain from 208–241 us to 119–130 us.
+  Dot-product proofs also retain their stream and buffers across proofs,
+  reducing isolated create/upload/drop cycles from 183.8-246.1 us to
+  21.8-22.3 us.
 
 ## Decision register
 

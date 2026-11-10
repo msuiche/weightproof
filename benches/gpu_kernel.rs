@@ -3,6 +3,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use weightproof::fp::{
     chain::Chain,
     integer_model::{bind_block, m1_first_query, prove_psc_dot_product, small_model, ProverTr},
+    native_cuda::DotState,
     tensor::fold_low,
 };
 use weightproof::fp::{
@@ -55,6 +56,15 @@ fn extension_fold_benchmark(c: &mut Criterion) {
                 )
             })
             .collect();
+        let witness_a: Vec<E> = pairs.iter().map(|pair| pair.0).collect();
+        let witness_b: Vec<E> = pairs.iter().map(|pair| pair.1).collect();
+        c.bench_function("dot-context-8192/init", |b| {
+            b.iter(|| {
+                let state = DotState::new(&witness_a, &witness_b).unwrap();
+                black_box(state);
+            })
+        });
+
         let (statement, _) = bind_block(&small_model(), &[0, 1], 4, 4, 1).unwrap();
         let query = m1_first_query(&statement).unwrap();
         c.bench_function("dot-product-8192/prove", |b| {
