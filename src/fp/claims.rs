@@ -302,6 +302,7 @@ impl Statement {
     }
 
     pub fn begin_run(&mut self, group: GroupId) -> (GroupLayout, Vec<Row>) {
+        let group_id = group;
         let layout = self.layout(group);
         let group = &mut self.groups[group as usize];
         let mut rows = Vec::new();
@@ -313,11 +314,43 @@ impl Statement {
                 .cloned(),
         );
         for &oracle in &group.members {
+            let start = rows.len();
             rows.extend(self.oracles[oracle as usize].sample_rows.clone());
+            #[cfg(feature = "std")]
+            if group_id == 10 {
+                eprintln!(
+                    "RUST_OWN_SAMPLE_SOURCE oracle={} rows={}..{}",
+                    oracle,
+                    start,
+                    rows.len()
+                );
+            }
+        }
+        #[cfg(feature = "std")]
+        if group_id == 10 {
+            for (index, row) in rows.iter().enumerate() {
+                eprintln!(
+                    "RUST_OWN_BATCH_ROW index={} forms={:?} terms={:?} units={:?} runs={:?}",
+                    index,
+                    row.forms.iter().map(|form| form.oracle).collect::<Vec<_>>(),
+                    row.terms.iter().map(|term| term.oracle).collect::<Vec<_>>(),
+                    row.units.iter().map(|unit| unit.oracle).collect::<Vec<_>>(),
+                    row.runs.iter().map(|run| run.oracle).collect::<Vec<_>>()
+                );
+            }
         }
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            eprintln!("RUST_BEGIN_RUN plain={} with_samples={} members={:?}", group.rows.iter().filter(|row| row.kind == RowKind::Plain).count(), rows.len(), group.members);
+            eprintln!(
+                "RUST_BEGIN_RUN plain={} with_samples={} members={:?}",
+                group
+                    .rows
+                    .iter()
+                    .filter(|row| row.kind == RowKind::Plain)
+                    .count(),
+                rows.len(),
+                group.members
+            );
         }
         rows.extend(
             group
@@ -369,7 +402,13 @@ fn add_to_group_row(
         out.d
             .resize(1usize << (layout.h + layout.log_ell_zk), E::ZERO);
     }
-    let member = |oracle: OracleId| layout.members.iter().position(|&id| id == oracle).unwrap();
+    let member = |oracle: OracleId| {
+        layout
+            .members
+            .iter()
+            .position(|&id| id == oracle)
+            .unwrap_or_else(|| panic!("missing oracle {} in group {:?}", oracle, layout.members))
+    };
     let carry_entry =
         |out: &mut GroupRow, oracle: OracleId, part: Part, index: u64, coefficient: E| {
             let i = member(oracle);
@@ -425,9 +464,27 @@ fn add_to_group_row(
         let i = member(main.oracle);
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            let vars = main.form.tensors.iter().map(|tensor| tensor.vars()).max().unwrap_or(0);
+            let vars = main
+                .form
+                .tensors
+                .iter()
+                .map(|tensor| tensor.vars())
+                .max()
+                .unwrap_or(0);
             let point = vec![E::ONE + E::ONE; vars as usize];
-            eprintln!("RUST_ROW_FORM oracle={} hash={:016x}", main.oracle, main.form.mle(&point).0[0]);
+            if main.oracle == 14 {
+                eprintln!(
+                    "RUST_ROW_FORM16 {:?}",
+                    (0..16)
+                        .map(|index| main.form.at(index).0[0])
+                        .collect::<Vec<_>>()
+                );
+            }
+            eprintln!(
+                "RUST_ROW_FORM oracle={} hash={:016x}",
+                main.oracle,
+                main.form.mle(&point).0[0]
+            );
         }
         if layout.kept[i] {
             kept_form(out, main.oracle).add_scaled(&main.form, scale);
@@ -454,21 +511,80 @@ pub fn bat_combine(
         target: E::ZERO,
     };
     let mut power = E::ONE;
+    #[cfg(feature = "std")]
+    if std::env::var_os("DUMP_SHARED").is_some() {
+        eprintln!(
+            "RUST_LAYOUT rows={} k={} h={} members={:?} kept={:?} main_first={:?}",
+            rows.len(),
+            layout.k,
+            layout.h,
+            layout.members,
+            layout.kept,
+            layout.main_first
+        );
+    }
     for (row_index, row) in rows.iter().enumerate() {
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            eprintln!("RUST_BAT_ROW index={} target={:016x}", row_index, row.target.0[0]);
+            eprintln!(
+                "RUST_BAT_ROW index={} target={:016x}",
+                row_index, row.target.0[0]
+            );
         }
         add_to_group_row(statement, layout, row, power, &mut out);
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_OWN_BASE").is_some() {
+            eprintln!(
+                "RUST_ACCUM_FORM index={} c0={:016x} c1={:016x} c2={:016x} c3={:016x}",
+                row_index,
+                out.c.at(0).0[0],
+                out.c.at(1).0[0],
+                out.c.at(2).0[0],
+                out.c.at(3).0[0]
+            );
+        }
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some()
+            && layout.members.len() == 1
+            && layout.members[0] == 43
+        {
+            eprintln!(
+                "RUST_BAT_ROW_COEF index={} c0={:016x} c1={:016x} c2={:016x} c42={:016x}",
+                row_index,
+                out.c.at(0).0[0],
+                out.c.at(1).0[0],
+                out.c.at(2).0[0],
+                out.c.at(42).0[0]
+            );
+        }
         power *= challenge;
     }
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {
         eprintln!("RUST_SHARED_BAT theta={:016x} target={:016x} d0={:016x} d1={:016x} d2={:016x} d3={:016x}", challenge.0[0], out.target.0[0], out.d.get(0).map_or(E::ZERO, |x| *x).0[0], out.d.get(1).map_or(E::ZERO, |x| *x).0[0], out.d.get(2).map_or(E::ZERO, |x| *x).0[0], out.d.get(3).map_or(E::ZERO, |x| *x).0[0]);
-        let vars = out.c.tensors.iter().map(|tensor| tensor.vars()).max().unwrap_or(0);
+        let vars = out
+            .c
+            .tensors
+            .iter()
+            .map(|tensor| tensor.vars())
+            .max()
+            .unwrap_or(0);
         let point = vec![E::ONE + E::ONE; vars as usize];
         let hash = out.c.mle(&point).0[0];
         eprintln!("RUST_BAT_COEF hash={:016x}", hash);
+        eprintln!(
+            "RUST_BAT_FORM c0={:016x} c1={:016x} c2={:016x} c3={:016x}",
+            out.c.at(0).0[0],
+            out.c.at(1).0[0],
+            out.c.at(2).0[0],
+            out.c.at(3).0[0]
+        );
+        eprintln!(
+            "RUST_BAT_FORM16 {:?}",
+            (0..16)
+                .map(|index| out.c.at(index).0[0])
+                .collect::<Vec<_>>()
+        );
     }
     out
 }
@@ -610,15 +726,27 @@ pub fn send_form(statement: &Statement, oracle: OracleId, z: &[E], beta: E, answ
         row.add(oracle, Part::Mask, on_mask);
     }
     #[cfg(feature = "std")]
-    if std::env::var_os("DUMP_SHARED").is_some() && oracle == 5 && !row.forms.is_empty() {
-        let vars = row.forms.iter().flat_map(|main| main.form.tensors.iter().map(|tensor| tensor.vars())).max().unwrap_or(0);
+    if std::env::var_os("DUMP_SHARED").is_some() && oracle == 14 && !row.forms.is_empty() {
+        let vars = row
+            .forms
+            .iter()
+            .flat_map(|main| main.form.tensors.iter().map(|tensor| tensor.vars()))
+            .max()
+            .unwrap_or(0);
         let point = vec![E::ONE + E::ONE; vars as usize];
-        eprintln!("RUST_SAMPLE_FORM oracle={} hash={:016x}", oracle, row.forms[0].form.mle(&point).0[0]);
+        eprintln!(
+            "RUST_SAMPLE_FORM oracle={} hash={:016x}",
+            oracle,
+            row.forms[0].form.mle(&point).0[0]
+        );
     }
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() && has_mask && !has_main {
         for unit in &row.units {
-            eprintln!("RUST_SEND_UNIT index={} coeff={:016x}", unit.index, unit.coefficient.0[0]);
+            eprintln!(
+                "RUST_SEND_UNIT index={} coeff={:016x}",
+                unit.index, unit.coefficient.0[0]
+            );
         }
     }
     row

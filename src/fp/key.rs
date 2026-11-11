@@ -164,6 +164,7 @@ pub(crate) fn lin_second(
     messages: &mut Vec<PlanMessage>,
     setting: &Setting,
     lin: &LinLayoutInput,
+    next_tree_number: u32,
 ) -> Result<(), FpError> {
     let (_, request) = scopes(lin);
     let mut trees = lin.input_trees.clone();
@@ -181,7 +182,7 @@ pub(crate) fn lin_second(
         &trees,
         !lin.masks_ahead,
         lin.masks_ride,
-        7,
+        next_tree_number,
     )
 }
 
@@ -243,7 +244,7 @@ pub fn plan_key(input: &KeyLayoutInput) -> Result<FilePlan, FpError> {
 
     let mut second = vec![];
     plan_chain_start(&mut second, "second chain", true);
-    lin_second(&mut second, &input.setting, &input.lin)?;
+    lin_second(&mut second, &input.setting, &input.lin, 7)?;
 
     FilePlan::key(
         input.table_answers,

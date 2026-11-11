@@ -1,6 +1,6 @@
 //! Request-link frame: SEND, CS^sigma, BAT, FOLD, and the final IOPP.
 
-use alloc::{vec, vec::Vec};
+use alloc::{borrow::ToOwned, vec, vec::Vec};
 
 use crate::fp::{
     chain::{Chain, ChainKind},
@@ -107,12 +107,7 @@ fn req_groups(shape: &ReqShape) -> Vec<ReqGroup> {
         }
         let h = crate::fp::tensor::ceil_log2(mask);
         let k = crate::fp::tensor::ceil_log2(main).max(h).max(1);
-        groups.push(ReqGroup {
-            k,
-            h,
-            target,
-            born,
-        });
+        groups.push(ReqGroup { k, h, target, born });
     }
     groups
 }
@@ -166,8 +161,18 @@ impl<'a, 'b> RequestFrame<'a, 'b> {
     ) -> Self {
         let groups = req_groups(&fixed.shape);
         let mut iopp = Iopp::new(fixed.codes.base.clone(), fixed.codes.mask.clone());
-        iopp.base_ids = fixed.shape.last.iter().map(|stage| stage.code as u64).collect();
-        iopp.mask_ids = fixed.shape.last.iter().map(|stage| stage.mask_code as u64).collect();
+        iopp.base_ids = fixed
+            .shape
+            .last
+            .iter()
+            .map(|stage| stage.code as u64)
+            .collect();
+        iopp.mask_ids = fixed
+            .shape
+            .last
+            .iter()
+            .map(|stage| stage.mask_code as u64)
+            .collect();
         Self {
             cursor,
             chain,
@@ -249,7 +254,11 @@ impl<'a, 'b> RequestFrame<'a, 'b> {
             let group = &self.input.links[link].fold;
             crate::fp::codes::positions(
                 crate::fp::analysis::analysis_of_m(group).at.agree,
-                self.input.setting.target - self.input.setting.query_work(crate::fp::analysis::Scope::Request),
+                self.input.setting.target
+                    - self
+                        .input
+                        .setting
+                        .query_work(crate::fp::analysis::Scope::Request),
                 0.0,
                 1,
             )
@@ -261,7 +270,11 @@ impl<'a, 'b> RequestFrame<'a, 'b> {
 
     fn link_name(&self) -> &str {
         #[cfg(feature = "std")]
-        eprintln!("RUST_LINK_NAME link={} len={}", self.link, self.fixed.shape.links.len());
+        eprintln!(
+            "RUST_LINK_NAME link={} len={}",
+            self.link,
+            self.fixed.shape.links.len()
+        );
         if self.link == self.fixed.shape.links.len() {
             "last group"
         } else {
@@ -315,7 +328,12 @@ impl<'a, 'b> RequestFrame<'a, 'b> {
             let target = self.groups[self.link].target.clone();
             #[cfg(feature = "std")]
             if self.link_name() == "A0" {
-                eprintln!("A0 target kept={} born={:?} own={}", target.kept.len(), self.groups[self.link].born, own.len());
+                eprintln!(
+                    "A0 target kept={} born={:?} own={}",
+                    target.kept.len(),
+                    self.groups[self.link].born,
+                    own.len()
+                );
             }
             let mut notices = Vec::with_capacity(1 + target.kept.len() + own.len() + 1);
             notices.push(OracleNotice {
@@ -344,7 +362,9 @@ impl<'a, 'b> RequestFrame<'a, 'b> {
             if !self.chain.close_with_work(
                 ChainKind::Positions,
                 &sent.answer_words,
-                self.input.setting.query_work(crate::fp::analysis::Scope::Request),
+                self.input
+                    .setting
+                    .query_work(crate::fp::analysis::Scope::Request),
                 nonce,
             ) {
                 return Err(FpError::Range {
@@ -514,7 +534,12 @@ impl<'a, 'b> RequestFrame<'a, 'b> {
             let bytes = self.cursor.take("round polynomial", context)?;
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_MSG").is_some() {
-                eprintln!("RUST_FOLD link={} round={} words={:?}", link, polynomials.len(), crate::fp::transcript::words(bytes));
+                eprintln!(
+                    "RUST_FOLD link={} round={} words={:?}",
+                    link,
+                    polynomials.len(),
+                    crate::fp::transcript::words(bytes)
+                );
             }
             let coefficients = elements(bytes);
             polynomials.push((coefficients[0], coefficients[1]));
@@ -566,8 +591,10 @@ mod tests {
 
     #[test]
     fn first_send_consumes_oracle_fields_exactly() {
-        let policy = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
-        let layout = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
+        let policy =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
+        let layout =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
         let kl = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/KL.bin");
         let leaf = include_bytes!("../../spikes/flashprove/examples/accepted-proof/ivk/leaf/0.bin");
         let proof = include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.proof");
@@ -588,7 +615,11 @@ mod tests {
         let mut cursor = Cursor::new(proof, &file_layout, &configuration, &table.commitment);
         cursor.take("head", "").unwrap();
         let salt = crate::fp::digest::Digest::from_le_bytes(
-            cursor.take("chain salt", "first chain").unwrap().try_into().unwrap(),
+            cursor
+                .take("chain salt", "first chain")
+                .unwrap()
+                .try_into()
+                .unwrap(),
         );
         let query = public.first_query(&salt);
         let run = query.run.unwrap();
@@ -614,24 +645,38 @@ mod tests {
         let input = accepted_input();
         let plan = plan_proof(&input).unwrap();
         let layout = plan.layout().unwrap();
-        let policy = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
-        let layout_bytes = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
+        let policy =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
+        let layout_bytes =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
         let kl = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/KL.bin");
         let configuration = configuration_digest(&[policy, layout_bytes, kl]);
         let fixed = accepted_request_fixed(configuration, layout_bytes);
-        println!("matrix_rows={} k_row={} k_col={}", fixed.lin.matrix_rows, fixed.lin.k_row(), fixed.lin.k_col());
+        println!(
+            "matrix_rows={} k_row={} k_col={}",
+            fixed.lin.matrix_rows,
+            fixed.lin.k_row(),
+            fixed.lin.k_col()
+        );
         for (i, field) in layout.fields().iter().enumerate().skip(6935).take(20) {
-            println!("{} name={} context={} kind={:?} bytes={}", i, field.message.name, field.message.context, field.message.kind, field.message.bytes);
+            println!(
+                "{} name={} context={} kind={:?} bytes={}",
+                i,
+                field.message.name,
+                field.message.context,
+                field.message.kind,
+                field.message.bytes
+            );
         }
     }
 
-    #[test]
-    fn g0_lookup_forest_consumes_exact_transcript() {
-        let policy = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
-        let layout = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
+    fn verify_accepted_request(proof: &[u8]) {
+        let policy =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
+        let layout =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
         let kl = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/KL.bin");
         let leaf = include_bytes!("../../spikes/flashprove/examples/accepted-proof/ivk/leaf/0.bin");
-        let proof = include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.proof");
         let configuration = configuration_digest(&[policy, layout, kl]);
         let (root, record, _) = parse_leaf_record(leaf, 256).unwrap();
         let table = IndexName::new(&root, &configuration, record);
@@ -644,16 +689,20 @@ mod tests {
             include_bytes!("../../spikes/plans/request-first-plan.bin"),
         );
         let input = accepted_input();
-        let request = crate::fp::request::RequestFile::parse(
-            include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.req"),
-        )
+        let request = crate::fp::request::RequestFile::parse(include_bytes!(
+            "../../spikes/flashprove/examples/accepted-proof/example.req"
+        ))
         .unwrap();
         let plan = plan_proof(&input).unwrap();
         let file_layout = plan.layout().unwrap();
         let mut cursor = Cursor::new(proof, &file_layout, &configuration, &table.commitment);
         cursor.take("head", "").unwrap();
         let salt = crate::fp::digest::Digest::from_le_bytes(
-            cursor.take("chain salt", "first chain").unwrap().try_into().unwrap(),
+            cursor
+                .take("chain salt", "first chain")
+                .unwrap()
+                .try_into()
+                .unwrap(),
         );
         let query = public.first_query(&salt);
         let run = query.run.unwrap();
@@ -682,9 +731,21 @@ mod tests {
         assert_eq!(forest.zx.len(), 20);
         assert_eq!(forest.zy.len(), 4);
         assert_eq!(forest.calls[3].zk.len(), 21);
-        let tables = crate::fp::layer::build_tables(&crate::fp::layer::accepted_layer(true), &forest).unwrap();
-        assert_eq!(tables.fun.len(), 31, "{:?}", tables.offsets.keys().collect::<Vec<_>>());
-        assert_eq!(tables.at("b-pin").unwrap() + 2048, 167328, "{:?}", tables.fun);
+        let tables =
+            crate::fp::layer::build_tables(&crate::fp::layer::accepted_layer(true), &forest)
+                .unwrap();
+        assert_eq!(
+            tables.fun.len(),
+            31,
+            "{:?}",
+            tables.offsets.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            tables.at("b-pin").unwrap() + 2048,
+            167328,
+            "{:?}",
+            tables.fun
+        );
         let run = crate::fp::layer::through_terms(
             &mut fork,
             &mut tr,
@@ -699,15 +760,28 @@ mod tests {
         run.tokv = request.tokens.clone();
         let mut check = crate::fp::layer_checks::LayerCheck::new(&mut run);
         let stack = check.stack(&mut fork, &mut tr, &mut slot).unwrap();
-        assert_eq!(stack.panels.len(), 18, "{:?}", stack.panels.iter().map(|panel| &panel.sn).collect::<Vec<_>>());
+        assert_eq!(
+            stack.panels.len(),
+            18,
+            "{:?}",
+            stack
+                .panels
+                .iter()
+                .map(|panel| &panel.sn)
+                .collect::<Vec<_>>()
+        );
         assert_eq!(stack.next_v, 32);
         assert_eq!(stack.s_a0, 1865);
         assert_eq!(stack.after_hd, 1943);
         assert_eq!(stack.after_hd2, 1980);
         drop(check);
-        let mut merged = crate::fp::layer_checks::ws_fork_merge(&mut run, &stack, &mut fork, &mut tr, &mut slot).unwrap();
+        let mut merged =
+            crate::fp::layer_checks::ws_fork_merge(&mut run, &stack, &mut fork, &mut tr, &mut slot)
+                .unwrap();
         assert_eq!(merged.rho.len(), 33);
-        let pending_g0 = crate::fp::layer_checks::LayerCheck::new(&mut run).pending(&accepted_request_fixed(configuration, layout).lin, &merged).unwrap();
+        let pending_g0 = crate::fp::layer_checks::LayerCheck::new(&mut run)
+            .pending(&accepted_request_fixed(configuration, layout).lin, &merged)
+            .unwrap();
         let mut pending_g0 = pending_g0;
         pending_g0.masks.push(crate::fp::mask::MaskTerm {
             slot: frame.iopp.statement.masks(frame.at_start[0]).take(),
@@ -735,7 +809,8 @@ mod tests {
         assert_eq!(trits.len(), 3099 * 128);
         drop(tr);
         frame.later().unwrap();
-        let mut tr = crate::fp::model::Tr::new(frame.cursor, frame.chain, "G0, smallness test, digits");
+        let mut tr =
+            crate::fp::model::Tr::new(frame.cursor, frame.chain, "G0, smallness test, digits");
         let mut digits = crate::fp::forest::forest_pad(
             &mut fork,
             &mut tr,
@@ -751,8 +826,14 @@ mod tests {
             .unwrap();
         assert!(fork.n_claim < 1549);
         check.smallness(&mut digits, &trits, &mut fork).unwrap();
-        check.objects_after_smallness(&stack, &mut merged, &mut fork).unwrap();
-        assert_eq!(fork.n_claim, 1549, "before={} reads={:?}", check.before_smallness, check.reads_by_matrix);
+        check
+            .objects_after_smallness(&stack, &mut merged, &mut fork)
+            .unwrap();
+        assert_eq!(
+            fork.n_claim, 1549,
+            "before={} reads={:?}",
+            check.before_smallness, check.reads_by_matrix
+        );
         check.coefficients(&digits, &mut fork);
         let equation = check.door_h(&fork).unwrap();
         assert_eq!(equation.on_masks.len(), 3204);
@@ -761,7 +842,9 @@ mod tests {
             .fields()
             .iter()
             .enumerate()
-            .filter(|(_, field)| field.message.name == "hiding sum" && field.message.context == "G0")
+            .filter(|(_, field)| {
+                field.message.name == "hiding sum" && field.message.context == "G0"
+            })
             .last()
             .unwrap()
             .0;
@@ -794,7 +877,8 @@ mod tests {
         let trits = tr.trits(1276, 128).unwrap();
         drop(tr);
         frame.later().unwrap();
-        let mut tr = crate::fp::model::Tr::new(frame.cursor, frame.chain, "A0, smallness test, digits");
+        let mut tr =
+            crate::fp::model::Tr::new(frame.cursor, frame.chain, "A0, smallness test, digits");
         let mut digits = crate::fp::forest::forest_pad(
             &mut a0,
             &mut tr,
@@ -813,7 +897,9 @@ mod tests {
             .fields()
             .iter()
             .enumerate()
-            .filter(|(_, field)| field.message.name == "hiding sum" && field.message.context == "A0")
+            .filter(|(_, field)| {
+                field.message.name == "hiding sum" && field.message.context == "A0"
+            })
             .last()
             .unwrap()
             .0;
@@ -844,17 +930,29 @@ mod tests {
         let mut check = crate::fp::layer_checks::LayerCheck::new(&mut run);
         let stack = check.stack(&mut g1, &mut tr, &mut slot).unwrap();
         drop(check);
-        assert!(run.points.contains_key("Z_a"), "points={:?}", run.points.keys());
-        let mut merged = crate::fp::layer_checks::ws_fork_merge(&mut run, &stack, &mut g1, &mut tr, &mut slot).unwrap();
+        assert!(
+            run.points.contains_key("Z_a"),
+            "points={:?}",
+            run.points.keys()
+        );
+        let mut merged =
+            crate::fp::layer_checks::ws_fork_merge(&mut run, &stack, &mut g1, &mut tr, &mut slot)
+                .unwrap();
         assert_eq!(merged.rho.len(), 32);
-        let pending_g1 = crate::fp::layer_checks::LayerCheck::new(&mut run).pending(&accepted_request_fixed(configuration, layout).lin, &merged).unwrap();
+        let pending_g1 = crate::fp::layer_checks::LayerCheck::new(&mut run)
+            .pending(&accepted_request_fixed(configuration, layout).lin, &merged)
+            .unwrap();
         let mut pending_g1 = pending_g1;
         pending_g1.masks.push(crate::fp::mask::MaskTerm {
             slot: frame.iopp.statement.masks(frame.at_start[0]).take(),
             coeff: merged.beta,
         });
         let mut pending = vec![pending_g0, pending_g1];
-        assert!(run.points.contains_key("Z_a"), "points after merge={:?}", run.points.keys());
+        assert!(
+            run.points.contains_key("Z_a"),
+            "points after merge={:?}",
+            run.points.keys()
+        );
         crate::fp::layer::assign_later_phi(&mut run).unwrap();
         drop(tr);
         frame.later().unwrap();
@@ -862,7 +960,8 @@ mod tests {
         let trits = tr.trits(3099, 128).unwrap();
         drop(tr);
         frame.later().unwrap();
-        let mut tr = crate::fp::model::Tr::new(frame.cursor, frame.chain, "G1, smallness test, digits");
+        let mut tr =
+            crate::fp::model::Tr::new(frame.cursor, frame.chain, "G1, smallness test, digits");
         let mut digits = crate::fp::forest::forest_pad(
             &mut g1,
             &mut tr,
@@ -871,9 +970,13 @@ mod tests {
         )
         .unwrap();
         let mut check = crate::fp::layer_checks::LayerCheck::new(&mut run);
-        check.objects_before_smallness(&stack, &mut merged, &mut g1, &mut tr).unwrap();
+        check
+            .objects_before_smallness(&stack, &mut merged, &mut g1, &mut tr)
+            .unwrap();
         check.smallness(&mut digits, &trits, &mut g1).unwrap();
-        check.objects_after_smallness(&stack, &mut merged, &mut g1).unwrap();
+        check
+            .objects_after_smallness(&stack, &mut merged, &mut g1)
+            .unwrap();
         // cp_verify: hp.nLin = 1516 for G1 (1549 for G0).
         assert_eq!(g1.n_claim, 1516);
         check.coefficients(&digits, &mut g1);
@@ -884,7 +987,9 @@ mod tests {
             .fields()
             .iter()
             .enumerate()
-            .filter(|(_, field)| field.message.name == "hiding sum" && field.message.context == "G1")
+            .filter(|(_, field)| {
+                field.message.name == "hiding sum" && field.message.context == "G1"
+            })
             .last()
             .unwrap()
             .0;
@@ -917,7 +1022,8 @@ mod tests {
         let trits = tr.trits(1276, 128).unwrap();
         drop(tr);
         frame.later().unwrap();
-        let mut tr = crate::fp::model::Tr::new(frame.cursor, frame.chain, "A1, smallness test, digits");
+        let mut tr =
+            crate::fp::model::Tr::new(frame.cursor, frame.chain, "A1, smallness test, digits");
         let mut digits = crate::fp::forest::forest_pad(
             &mut a1,
             &mut tr,
@@ -936,7 +1042,9 @@ mod tests {
             .fields()
             .iter()
             .enumerate()
-            .filter(|(_, field)| field.message.name == "hiding sum" && field.message.context == "A1")
+            .filter(|(_, field)| {
+                field.message.name == "hiding sum" && field.message.context == "A1"
+            })
             .last()
             .unwrap()
             .0;
@@ -991,7 +1099,8 @@ mod tests {
         let trits = tr.trits(1594, 128).unwrap();
         drop(tr);
         frame.later().unwrap();
-        let mut tr = crate::fp::model::Tr::new(frame.cursor, frame.chain, "H, smallness test, digits");
+        let mut tr =
+            crate::fp::model::Tr::new(frame.cursor, frame.chain, "H, smallness test, digits");
         let mut digits = crate::fp::forest::forest_pad(
             &mut h,
             &mut tr,
@@ -1029,5 +1138,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(frame.cursor.index, file_layout.fields().len());
+    }
+
+    #[test]
+    fn g0_lookup_forest_consumes_exact_transcript() {
+        verify_accepted_request(include_bytes!(
+            "../../spikes/flashprove/examples/accepted-proof/example.proof"
+        ));
+    }
+
+    #[test]
+    fn mutated_request_proof_is_rejected() {
+        let mut proof =
+            include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.proof")
+                .to_vec();
+        let last = proof.len() - 1;
+        proof[last] ^= 1;
+        assert!(std::panic::catch_unwind(|| verify_accepted_request(&proof)).is_err());
     }
 }

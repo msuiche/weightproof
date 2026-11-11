@@ -14,12 +14,32 @@ std = ["alloc"]
 alloc = []
 # prover (later): GPU/host proving code, never a dependency of the verifier core.
 prover = ["std"]
+icicle-prover = [
+    "prover",
+    "dep:icicle-core",
+    "dep:icicle-goldilocks",
+    "dep:icicle-runtime",
+]
+native-cuda = ["icicle-prover"]
 
 [dependencies]
 # no_std math (sqrt/floor); integer-exponent pow is implemented by squaring.
 libm = "0.2"
+icicle-core = { git = "https://github.com/ingonyama-zk/icicle.git", optional = true }
+icicle-goldilocks = { git = "https://github.com/ingonyama-zk/icicle.git", default-features = false, optional = true }
+icicle-runtime = { git = "https://github.com/ingonyama-zk/icicle.git", optional = true }
 
 [dev-dependencies]
+criterion = "0.5"
 
 [profile.release]
 lto = true
+
+[[bench]]
+name = "block_proof"
+harness = false
+
+[[bench]]
+name = "gpu_kernel"
+harness = false
+required-features = ["icicle-prover"]

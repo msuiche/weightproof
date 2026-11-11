@@ -68,11 +68,17 @@ impl<'a, 'b> Tr<'a, 'b> {
     fn close(&mut self, kind: ChainKind) {
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_ROUNDS").is_some() {
-            eprintln!("RUST_MODEL_CLOSE context={} kind={}", self.context, kind as u64);
+            eprintln!(
+                "RUST_MODEL_CLOSE context={} kind={}",
+                self.context, kind as u64
+            );
         }
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_MSG").is_some() {
-            eprintln!("RUST_MSG context={} kind={} words={:?}", self.context, kind as u64, self.last_words);
+            eprintln!(
+                "RUST_MSG context={} kind={} words={:?}",
+                self.context, kind as u64, self.last_words
+            );
         }
         let message = core::mem::take(&mut self.last_words);
         self.chain.close(kind, &message);
@@ -80,7 +86,9 @@ impl<'a, 'b> Tr<'a, 'b> {
 
     pub fn answer(&mut self, round: RoundName) -> Result<E, FpError> {
         #[cfg(feature = "std")]
-        if std::env::var_os("DUMP_ROUNDS").is_some() { eprintln!("RUST_ANSWER context={} round={:?}", self.context, round); }
+        if std::env::var_os("DUMP_ROUNDS").is_some() {
+            eprintln!("RUST_ANSWER context={} round={:?}", self.context, round);
+        }
         self.close(match round {
             RoundName::PscEpsilon => ChainKind::Epsilon,
             RoundName::PscValues => ChainKind::Empty,
@@ -96,9 +104,13 @@ impl<'a, 'b> Tr<'a, 'b> {
 
     pub fn point(&mut self, round: RoundName, count: usize) -> Result<Vec<E>, FpError> {
         #[cfg(feature = "std")]
-        if std::env::var_os("DUMP_ROUNDS").is_some() { eprintln!("RUST_POINT context={} count={}", self.context, count); }
+        if std::env::var_os("DUMP_ROUNDS").is_some() {
+            eprintln!("RUST_POINT context={} count={}", self.context, count);
+        }
         self.close(ChainKind::Algebraic);
-        Ok((0..count).map(|_| E::from_words(self.chain.draw_e())).collect())
+        Ok((0..count)
+            .map(|_| E::from_words(self.chain.draw_e()))
+            .collect())
     }
 
     pub fn batch(&mut self, rows: usize) -> Result<Vec<E>, FpError> {
@@ -119,7 +131,9 @@ impl<'a, 'b> Tr<'a, 'b> {
 
     pub fn batch_open(&mut self) -> Result<E, FpError> {
         #[cfg(feature = "std")]
-        if std::env::var_os("DUMP_ROUNDS").is_some() { eprintln!("RUST_BATCH_OPEN context={}", self.context); }
+        if std::env::var_os("DUMP_ROUNDS").is_some() {
+            eprintln!("RUST_BATCH_OPEN context={}", self.context);
+        }
         self.close(ChainKind::Algebraic);
         Ok(E::from_words(self.chain.draw_e()))
     }
@@ -211,7 +225,8 @@ impl Aff {
             idx: entry.idx,
             coef: entry.coef * scale,
         }));
-        self.s.extend(other.s.iter().map(|&(slot, coeff)| (slot, coeff * scale)));
+        self.s
+            .extend(other.s.iter().map(|&(slot, coeff)| (slot, coeff * scale)));
         self.c += other.c * scale;
     }
 
@@ -387,28 +402,76 @@ impl HFork {
             self.ls[slot as usize] += weight * coeff;
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() && slot == 1591 {
-                eprintln!("RUST_SLOT1591_WRITE weight={:016x} coeff={:016x} nclaim={}", weight.0[0], coeff.0[0], self.n_claim);
+                eprintln!(
+                    "RUST_SLOT1591_WRITE weight={:016x} coeff={:016x} nclaim={}",
+                    weight.0[0], coeff.0[0], self.n_claim
+                );
             }
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() && slot == 12 {
-                eprintln!("RUST_SLOT12_WRITE weight={:016x} coeff={:016x} nclaim={}", weight.0[0], coeff.0[0], self.n_claim);
+                eprintln!(
+                    "RUST_SLOT12_WRITE weight={:016x} coeff={:016x} nclaim={}",
+                    weight.0[0], coeff.0[0], self.n_claim
+                );
             }
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() && slot == 78 {
-                eprintln!("RUST_SLOT78_WRITE weight={:016x} coeff={:016x} nclaim={}", weight.0[0], coeff.0[0], self.n_claim);
+                eprintln!(
+                    "RUST_SLOT78_WRITE weight={:016x} coeff={:016x} nclaim={}",
+                    weight.0[0], coeff.0[0], self.n_claim
+                );
             }
         }
         self.c0 += weight * form.c;
         #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_U3").is_some() && self.n_claim == 896 {
+            for entry in &form.e {
+                eprintln!(
+                    "RUST_CLAIM896_ENT tree={} row={} idx={} coef={:016x}",
+                    entry.tree, entry.row, entry.idx, entry.coef.0[0]
+                );
+            }
+        }
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_U3").is_some() && form.e.iter().any(|entry| entry.tree == 0) {
+            if let Some(row) = self
+                .trees
+                .get(0)
+                .and_then(|tree| tree.rows.get(0))
+                .filter(|row| !row.l.is_empty())
+            {
+                let hash = row.l.iter().fold(0u64, |hash, value| hash ^ value.0[0]);
+                eprintln!(
+                    "RUST_U3_AFTER index={} hash={:016x} first={:016x}",
+                    self.n_claim, hash, row.l[0].0[0]
+                );
+            }
+        }
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SHARED").is_some() && self.n_claim == 86 {
+            for entry in &form.e {
+                eprintln!(
+                    "RUST_CLAIM86_ENT tree={} row={} idx={} coef={:016x}",
+                    entry.tree, entry.row, entry.idx, entry.coef.0[0]
+                );
+            }
+        }
+        #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() && self.n_claim == 275 {
             for entry in &form.e {
-                eprintln!("RUST_CLAIM275_ENT tree={} row={} idx={} coef={:016x}", entry.tree, entry.row, entry.idx, entry.coef.0[0]);
+                eprintln!(
+                    "RUST_CLAIM275_ENT tree={} row={} idx={} coef={:016x}",
+                    entry.tree, entry.row, entry.idx, entry.coef.0[0]
+                );
             }
         }
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() && self.n_claim == 78 {
             for entry in &form.e {
-                eprintln!("RUST_CLAIM78_ENT tree={} row={} idx={} coef={:016x}", entry.tree, entry.row, entry.idx, entry.coef.0[0]);
+                eprintln!(
+                    "RUST_CLAIM78_ENT tree={} row={} idx={} coef={:016x}",
+                    entry.tree, entry.row, entry.idx, entry.coef.0[0]
+                );
             }
         }
         #[cfg(feature = "std")]
@@ -463,7 +526,10 @@ impl HFork {
             debug_sum += self.ls[j] * self.vp[j];
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() && j < 2000 {
-                eprintln!("RUST_SETTLE_SLOT j={} ls={:016x} vp={:016x} mf={:016x}", j, self.ls[j].0[0], self.vp[j].0[0], self.mf[j].0[0]);
+                eprintln!(
+                    "RUST_SETTLE_SLOT j={} ls={:016x} vp={:016x} mf={:016x}",
+                    j, self.ls[j].0[0], self.vp[j].0[0], self.mf[j].0[0]
+                );
             }
         }
         #[cfg(feature = "std")]
@@ -564,7 +630,8 @@ pub fn round_in(
     z: E,
     degree: u32,
 ) -> Result<E, FpError> {
-    if p.ended || (matches!(form, RoundForm::Nodes | RoundForm::Eq) && !(1..=64).contains(&degree)) {
+    if p.ended || (matches!(form, RoundForm::Nodes | RoundForm::Eq) && !(1..=64).contains(&degree))
+    {
         return Err(FpError::Range {
             context: "model-psc-round",
         });
@@ -572,7 +639,10 @@ pub fn round_in(
     let d = round_values(form, degree) + 1;
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() && p.first == 1621 {
-        eprintln!("RUST_ROUND form={:?} degree={} d={} z={:016x}", form, degree, d, z.0[0]);
+        eprintln!(
+            "RUST_ROUND form={:?} degree={} d={} z={:016x}",
+            form, degree, d, z.0[0]
+        );
     }
     let weight = if matches!(form, RoundForm::Eq2 | RoundForm::Eq) {
         Weight::equality(z, d as usize)
@@ -595,13 +665,7 @@ pub fn psc_ends(
             context: "model-psc-end",
         });
     }
-    let beta = psc_round(
-        tr,
-        slot,
-        p,
-        Weight::at_zero(degree_in_y as usize + 1),
-        true,
-    )?;
+    let beta = psc_round(tr, slot, p, Weight::at_zero(degree_in_y as usize + 1), true)?;
     p.ended = true;
     let first = *slot;
     let values = tr.read(count as usize)?;
@@ -624,11 +688,27 @@ pub fn psc_row(f: &mut HFork, p: &mut Psc, s0: E, kept: &Aff) -> Result<Aff, FpE
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {
         let xor = form.iter().fold(0u64, |a, x| a ^ x.0[0]);
-        eprintln!("RUST_PSC_FORM first={} k={} r0={:016x} xor={:016x}", p.first, p.vars.len(), p.r[0].0[0], xor);
+        eprintln!(
+            "RUST_PSC_FORM first={} k={} r0={:016x} xor={:016x}",
+            p.first,
+            p.vars.len(),
+            p.r[0].0[0],
+            xor
+        );
         if p.first == 1621 || p.first == 1583 {
-            eprintln!("RUST_PSC_DETAIL d={:?}", p.vars.iter().map(|v| v.d).collect::<Vec<_>>());
-            for (i, x) in p.r.iter().enumerate() { eprintln!("RUST_PSC_G {} {:016x} {:016x} {:016x}", i, x.0[0], x.0[1], x.0[2]); }
-            for (i, x) in form.iter().enumerate() { eprintln!("RUST_PSC_C {} {:016x}", i, x.0[0]); }
+            eprintln!(
+                "RUST_PSC_DETAIL d={:?}",
+                p.vars.iter().map(|v| v.d).collect::<Vec<_>>()
+            );
+            for (i, x) in p.r.iter().enumerate() {
+                eprintln!(
+                    "RUST_PSC_G {} {:016x} {:016x} {:016x}",
+                    i, x.0[0], x.0[1], x.0[2]
+                );
+            }
+            for (i, x) in form.iter().enumerate() {
+                eprintln!("RUST_PSC_C {} {:016x}", i, x.0[0]);
+            }
         }
     }
     let mut out = Aff::constant(-(p.claim - p.eps * s0));
@@ -643,7 +723,15 @@ pub fn psc_row(f: &mut HFork, p: &mut Psc, s0: E, kept: &Aff) -> Result<Aff, FpE
     out.add(&Aff::constant(p.target).minus(&p.start), product);
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() && p.first == 1583 {
-        eprintln!("RUST_PSC_START_PRODUCT product={:016x} slots={:?}", product.0[0], p.start.s.iter().map(|x| (x.0, x.1.0[0])).collect::<Vec<_>>());
+        eprintln!(
+            "RUST_PSC_START_PRODUCT product={:016x} slots={:?}",
+            product.0[0],
+            p.start
+                .s
+                .iter()
+                .map(|x| (x.0, x.1 .0[0]))
+                .collect::<Vec<_>>()
+        );
     }
     out.add(kept, p.eps);
     Ok(out)
@@ -695,7 +783,15 @@ pub fn tsc_rounds(
     let mut p = psc_begin(f, tr, slot, Aff::slot(s_cl))?;
     let mut r = Vec::with_capacity(point.len());
     for &coordinate in point {
-        r.push(round_in(f, tr, slot, RoundForm::Eq2, &mut p, coordinate, 0)?);
+        r.push(round_in(
+            f,
+            tr,
+            slot,
+            RoundForm::Eq2,
+            &mut p,
+            coordinate,
+            0,
+        )?);
     }
     Ok(TokenSumcheckState {
         s_cl,
@@ -725,7 +821,12 @@ pub struct HStack {
     pub p: Psc,
 }
 
-pub fn stack_rounds(f: &mut HFork, tr: &mut Tr, slot: &mut u32, stack: &mut HStack) -> Result<(), FpError> {
+pub fn stack_rounds(
+    f: &mut HFork,
+    tr: &mut Tr,
+    slot: &mut u32,
+    stack: &mut HStack,
+) -> Result<(), FpError> {
     stack.rs = vec![E::ZERO; stack.lam as usize];
     for v in (0..stack.lam).rev() {
         stack.rs[v as usize] = round_in(f, tr, slot, RoundForm::Sum2, &mut stack.p, E::ZERO, 0)?;

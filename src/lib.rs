@@ -10,7 +10,7 @@
 //! - later: cryptographic verification, then proving (feature `prover`).
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 // The verifier parses adversarial proofs. Indexing/unwrap on untrusted bytes
 // is a defect (D8); clippy config enforces this as the crate grows.
 #![warn(clippy::indexing_slicing, clippy::unwrap_used, clippy::panic)]

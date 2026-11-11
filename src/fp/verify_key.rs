@@ -9,11 +9,11 @@ use crate::fp::{
     heads::parse_key_record,
     iopp::Iopp,
     key::KeyLayoutInput,
-    key_public::{KeyPublic, LABEL_ONE_TIME_CHAIN},
+    key_public::{item, KeyPublic, LinPublic, LABEL_ONE_TIME_CHAIN, LIN_LABEL_SECOND},
+    lin::{lin_dot_row, member_first_verify, read_binding_root},
     link_public::IndexName,
-    lin::{member_first_verify, read_binding_root},
     psc::PscChannel,
-    send::read_samples_after_root,
+    send::{read_samples_after_root, OracleBook, OracleLocation},
     transcript::{elements, words, Cursor, OpeningData},
     wf::wf_rows_verify,
 };
@@ -187,11 +187,7 @@ fn opened_for_shared_rows(
     split: u32,
 ) -> crate::fp::proximity::Opened {
     let ids = rows.oracles();
-    let primary = ids
-        .iter()
-        .copied()
-        .find(|&oracle| oracle != split)
-        .unwrap();
+    let primary = ids.iter().copied().find(|&oracle| oracle != split).unwrap();
     let fresh = if rows.masks == 2 {
         Some(*ids.last().unwrap())
     } else {
@@ -309,6 +305,7 @@ pub(crate) fn run_iopp_stages(
     scope: crate::fp::analysis::Scope,
     shared_split: Option<u32>,
     initial_fresh: Option<u32>,
+    initial_book: Option<&crate::fp::send::OracleBook>,
     mask_ahead: bool,
 ) -> Result<crate::fp::claims::GroupRow, FpError> {
     let work_bits = setting.query_work(scope);
@@ -342,7 +339,10 @@ pub(crate) fn run_iopp_stages(
             let hiding_sum = elements(hiding)[0];
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() {
-                eprintln!("RUST_OMEGA_FOLD root={:?} sum={:016x}", fresh_override, hiding_sum.0[0]);
+                eprintln!(
+                    "RUST_OMEGA_FOLD root={:?} sum={:016x}",
+                    fresh_override, hiding_sum.0[0]
+                );
             }
             epsilon_message.extend(words(hiding));
             chain.close(ChainKind::Epsilon, &epsilon_message);
@@ -359,7 +359,10 @@ pub(crate) fn run_iopp_stages(
                 polynomials.push((coefficients[0], coefficients[1]));
                 #[cfg(feature = "std")]
                 if std::env::var_os("DUMP_SHARED").is_some() {
-                    eprintln!("RUST_FOLD_COEFF c0={:016x} c2={:016x}", coefficients[0].0[0], coefficients[1].0[0]);
+                    eprintln!(
+                        "RUST_FOLD_COEFF c0={:016x} c2={:016x}",
+                        coefficients[0].0[0], coefficients[1].0[0]
+                    );
                 }
                 chain.close(ChainKind::Algebraic, &words(polynomial));
                 challenges.push(E::from_words(chain.draw_e()));
@@ -377,47 +380,61 @@ pub(crate) fn run_iopp_stages(
             let answer = elements(answers)[0];
             let nonce = cursor.take_nonce(&stage_context)?;
             if !chain.close_with_work(ChainKind::Positions, &words(answers), work_bits, nonce) {
-                return Err(FpError::Range { context: "proof-of-work-cs" });
+                return Err(FpError::Range {
+                    context: "proof-of-work-cs",
+                });
             }
             let symbols = stage.g.slots + u64::from(stage.g.has_mask()) * 2;
-            let position_count = crate::fp::plan::cs_positions(
-                setting,
-                scope,
-                stage,
-                &stages[index + 1],
-                symbols,
-            )?;
+            let position_count =
+                crate::fp::plan::cs_positions(setting, scope, stage, &stages[index + 1], symbols)?;
             let positions: Vec<u64> = (0..position_count)
                 .map(|_| chain.draw_position(stage.g.main.log_n))
                 .collect();
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() {
-                eprintln!("RUST_STAGE_POSITIONS index={} count={} first={} second={} last={}", index, positions.len(), positions[0], positions[1], positions[positions.len() - 1]);
+                eprintln!(
+                    "RUST_STAGE_POSITIONS index={} count={} first={} second={} last={}",
+                    index,
+                    positions.len(),
+                    positions[0],
+                    positions[1],
+                    positions[positions.len() - 1]
+                );
             }
             let theta = E::from_words(chain.draw_e());
             let opening_start = cursor.opened.len();
             cursor.open_stage(&positions, run)?;
-            let opened = if let Some(split) = shared_split {
+            let rows = crate::fp::proximity::SingleRows {
+                code: iopp.base_ids[index] as u32,
+                mask_code: iopp.mask_ids[index] as u32,
+                layout: iopp.statement.layout(iopp.group),
+                gamma: challenges.clone(),
+                masks: 2,
+                fresh: fresh_override
+                    .or(if index == start {
+                        initial_fresh
+                    } else {
+                        Some(iopp.statement.oracles.len() as u32 - 1)
+                    })
+                    .unwrap(),
+                c: Default::default(),
+                kept: vec![],
+                kept_rows: 0,
+                d: vec![],
+                target: E::ZERO,
+            };
+            let opened = if let Some(book) = initial_book.filter(|_| index == start) {
+                book.opened(
+                    &rows,
+                    &iopp.statement,
+                    &cursor.opened[opening_start..],
+                    bytes,
+                    &positions,
+                    false,
+                )?
+            } else if let Some(split) = shared_split {
                 opened_for_shared_rows(
-                    &crate::fp::proximity::SingleRows {
-                        code: iopp.base_ids[index] as u32,
-                        mask_code: iopp.mask_ids[index] as u32,
-                        layout: iopp.statement.layout(iopp.group),
-                        gamma: challenges.clone(),
-                        masks: 2,
-                        fresh: fresh_override
-                            .or(if index == start {
-                                initial_fresh
-                            } else {
-                                Some(iopp.statement.oracles.len() as u32 - 1)
-                            })
-                            .unwrap(),
-                        c: Default::default(),
-                        kept: vec![],
-                        kept_rows: 0,
-                        d: vec![],
-                        target: E::ZERO,
-                    },
+                    &rows,
                     &iopp.statement,
                     &cursor.opened[opening_start..],
                     bytes,
@@ -427,25 +444,7 @@ pub(crate) fn run_iopp_stages(
                 )
             } else {
                 opened_for_rows(
-                    &crate::fp::proximity::SingleRows {
-                        code: iopp.base_ids[index] as u32,
-                        mask_code: iopp.mask_ids[index] as u32,
-                        layout: iopp.statement.layout(iopp.group),
-                        gamma: challenges.clone(),
-                        masks: 2,
-                        fresh: fresh_override
-                            .or(if index == start {
-                                initial_fresh
-                            } else {
-                                Some(iopp.statement.oracles.len() as u32 - 1)
-                            })
-                            .unwrap(),
-                        c: Default::default(),
-                        kept: vec![],
-                        kept_rows: 0,
-                        d: vec![],
-                        target: E::ZERO,
-                    },
+                    &rows,
                     &iopp.statement,
                     cursor.opened.last().unwrap(),
                     bytes,
@@ -575,6 +574,9 @@ pub(crate) fn read_sample(
     context: &str,
 ) -> Result<E, FpError> {
     let root = cursor.take_root(context)?;
+    if context == "table, folded row" {
+        cursor.alias_tree_root("folded row, stage 1", 0, root);
+    }
     chain.close(ChainKind::Seed, &words(&root.to_le_bytes()));
     read_sample_after_root(cursor, chain, statement, oracle, context)
 }
@@ -585,7 +587,7 @@ pub fn verify_key_transcript(
     bytes: &[u8],
 ) -> Result<(), FpError> {
     let plan = crate::fp::key::plan_key(input)?;
-    let layout = plan.layout()?;
+    let file_layout = plan.layout()?;
     let (root, record, _) = parse_key_record(bytes, input.table_answers as usize)?;
     let table = IndexName::new(&root, configuration, record);
     let fixed = crate::fp::key_fixture::accepted_fixed(*configuration);
@@ -594,7 +596,7 @@ pub fn verify_key_transcript(
         &table,
         include_bytes!("../../spikes/plans/key-one-time-plan.bin"),
     );
-    let mut cursor = Cursor::new_with_anchor(bytes, &layout, configuration, "table", &root);
+    let mut cursor = Cursor::new_with_anchor(bytes, &file_layout, configuration, "table", &root);
     cursor.take("head", "")?;
     cursor.take_root("table")?;
     cursor.take("record", "table")?;
@@ -609,7 +611,12 @@ pub fn verify_key_transcript(
     let mut chain = Chain::new(public.first_query(&salt, LABEL_ONE_TIME_CHAIN));
     let run = public.first_query(&salt, LABEL_ONE_TIME_CHAIN).run.unwrap();
     #[cfg(feature = "std")]
-    eprintln!("RUST_ONE_RUN run={} salt={} params={}", run.to_hex(), salt.to_hex(), public.parameters.to_hex());
+    eprintln!(
+        "RUST_ONE_RUN run={} salt={} params={}",
+        run.to_hex(),
+        salt.to_hex(),
+        public.parameters.to_hex()
+    );
     let mut statement = Statement::new(fixed.codes.base.clone(), fixed.codes.mask.clone());
     let index_masks = statement.sent(fixed.index_masks.shape.clone());
     read_sample(
@@ -818,7 +825,7 @@ pub fn verify_key_transcript(
     } else {
         None
     };
-    let _first = member_first_verify(
+    let first = member_first_verify(
         &mut iopp.statement,
         &mut KeyChannel::new(&mut cursor, &mut chain, "ranges: rows on the table"),
         &fixed.lin,
@@ -836,25 +843,30 @@ pub fn verify_key_transcript(
         seal_words[2 * i + 1] = (word >> 32) as u32;
     }
     let seal = Digest(seal_words);
-    let _binding = read_binding_root(&mut cursor, &fixed.binding, configuration, &seal)?;
+    let binding = read_binding_root(&mut cursor, &fixed.binding, configuration, &seal)?;
     let shared_public = crate::fp::key_public::LinPublic::shared(
         &fixed,
         &table,
         include_bytes!("../../spikes/plans/key-shared-plan.bin"),
-        &_binding,
+        &binding,
     );
     let shared_query = shared_public.first_query(crate::fp::key_public::LIN_LABEL_SHARED);
     #[cfg(feature = "std")]
-    eprintln!("SHARED_STATEMENT_MATCH {}", shared_public.statement == include_bytes!("../../spikes/plans/key-shared-statement.bin"));
+    eprintln!(
+        "SHARED_STATEMENT_MATCH {}",
+        shared_public.statement == include_bytes!("../../spikes/plans/key-shared-statement.bin")
+    );
     let shared_run = shared_query.run.unwrap();
     #[cfg(feature = "std")]
-    eprintln!("RUST_SHARED_RUN run={} salt={} params={}", shared_run.to_hex(), _binding.digest.to_hex(), shared_public.parameters.to_hex());
-    let mut shared_chain = Chain::new(shared_query);
-    let mut shared = crate::fp::lin_algebra::LinSharedAlgebra::new(
-        &fixed.lin,
-        &fixed.codes,
-        configuration,
+    eprintln!(
+        "RUST_SHARED_RUN run={} salt={} params={}",
+        shared_run.to_hex(),
+        binding.digest.to_hex(),
+        shared_public.parameters.to_hex()
     );
+    let mut shared_chain = Chain::new(shared_query);
+    let mut shared =
+        crate::fp::lin_algebra::LinSharedAlgebra::new(&fixed.lin, &fixed.codes, configuration);
     shared_chain.close(ChainKind::Algebraic, &[]);
     let psi: Vec<E> = (0..fixed.lin.k_col())
         .map(|_| E::from_words(shared_chain.draw_e()))
@@ -876,9 +888,8 @@ pub fn verify_key_transcript(
         .map(|_| shared_chain.draw_position(fixed.lin.fold.index.code.log_n))
         .collect();
     let first_shared_opening = cursor.opened.len();
-    #[cfg(feature = "std")]
-    eprintln!("RUST_POSITIONS count={} first={} second={} last={}", columns.len(), columns[0], columns[1], columns[columns.len() - 1]);
-    cursor.open_stage(&columns, &shared_run)?;
+    cursor.alias_tree_root("table", 0, table.commitment);
+    cursor.open_next(&columns, configuration)?;
     shared.initial(
         &table,
         &psi[fixed.lin.k_lo as usize..],
@@ -887,9 +898,12 @@ pub fn verify_key_transcript(
         bytes,
     )?;
     let omega_root = cursor.take_root("table, Omega")?;
+    cursor.alias_tree_root("Omega, stage 1", 1, omega_root);
     let mut omega_message = words(&omega_root.to_le_bytes());
     if shared.shared.split.is_some() {
         let split_root = cursor.take_root("table, Omega")?;
+        cursor.alias_tree_root("folded row, stage 1", 2, split_root);
+        cursor.alias_tree_root("Omega, stage 1", 2, split_root);
         omega_message.extend(words(&split_root.to_le_bytes()));
     }
     shared_chain.close(ChainKind::Seed, &omega_message);
@@ -910,7 +924,9 @@ pub fn verify_key_transcript(
         .collect();
     let omega_lay = crate::fp::claims::VectorLay {
         row_bits: crate::fp::tensor::ceil_log2(fixed.lin.omega.main_rows),
-        place_bits: crate::fp::code_eval::log_ell(&shared.iopp.statement.base[fixed.lin.omega.code as usize]),
+        place_bits: crate::fp::code_eval::log_ell(
+            &shared.iopp.statement.base[fixed.lin.omega.code as usize],
+        ),
         rows_high: fixed.lin.omega_rows_high,
     };
     let fold_row = crate::fp::lin::lin_fold_row(
@@ -933,7 +949,10 @@ pub fn verify_key_transcript(
             split,
         )?;
     } else {
-        shared.iopp.statement.add_row(shared.shared.group_u, fold_row);
+        shared
+            .iopp
+            .statement
+            .add_row(shared.shared.group_u, fold_row);
     }
     shared.iopp.group = shared.shared.group_u;
     shared_chain.close(ChainKind::Algebraic, &[]);
@@ -960,6 +979,7 @@ pub fn verify_key_transcript(
         crate::fp::analysis::Scope::Commit,
         shared.shared.split,
         shared.shared.mask,
+        None,
         true,
     )?;
     shared.iopp.group = shared.shared.group_omega;
@@ -980,6 +1000,7 @@ pub fn verify_key_transcript(
         crate::fp::analysis::Scope::Commit,
         shared.shared.split,
         shared.shared.mask,
+        None,
         false,
     )?;
     shared_chain.close(ChainKind::Seal, &[]);
@@ -989,7 +1010,192 @@ pub fn verify_key_transcript(
         shared_seal_words[2 * i] = word as u32;
         shared_seal_words[2 * i + 1] = (word >> 32) as u32;
     }
-    let _shared_seal = Digest(shared_seal_words);
+    let shared_seal = Digest(shared_seal_words);
+
+    let second_salt = Digest::from_le_bytes(
+        cursor
+            .take("chain salt", "second chain")?
+            .try_into()
+            .map_err(|_| FpError::BadLength {
+                context: "second-chain-salt",
+            })?,
+    );
+    let second_public = LinPublic::second_parts(
+        configuration,
+        include_bytes!("../../spikes/plans/key-second-plan.bin"),
+        &binding,
+    );
+    let mut second_statement = second_public.statement.clone();
+    item(
+        &mut second_statement,
+        "the seal of an earlier chain",
+        &seal.to_le_bytes(),
+    );
+    item(
+        &mut second_statement,
+        "the seal of an earlier chain",
+        &shared_seal.to_le_bytes(),
+    );
+    let second_public = LinPublic {
+        statement: second_statement,
+        random: second_salt,
+        ..second_public
+    };
+    let second_query = second_public.first_query(LIN_LABEL_SECOND);
+    let second_run = second_query.run.unwrap();
+
+    cursor.alias_root_run("masks of the committer's rows on the table", run);
+    cursor.alias_root_run("table, W", run);
+    cursor.alias_root_run("table, Omega", shared_run);
+    let mut second_chain = Chain::new(second_query);
+    let mut second_book = OracleBook::default();
+    let input_tree = input
+        .lin
+        .input_trees
+        .first()
+        .ok_or(FpError::Range {
+            context: "key-mask-tree",
+        })?
+        .number;
+    second_book.adopt(
+        index_masks,
+        OracleLocation::new(
+            input_tree,
+            0,
+            0,
+            "masks of the committer's rows on the table",
+        ),
+    );
+    let w_tree = input
+        .lin
+        .w_trees
+        .first()
+        .ok_or(FpError::Range {
+            context: "key-w-tree",
+        })?
+        .number;
+    let w_shape = &iopp.statement.oracles[first.w as usize].shape;
+    let w_main = w_shape.main_rows as usize * w_shape.main_deg as usize;
+    let w_mask = w_shape.mask_rows as usize * 3;
+    second_book.adopt(first.w, OracleLocation::new(w_tree, 0, w_main, "table, W"));
+    if let Some(mask) = first.mask {
+        second_book.adopt(
+            mask,
+            OracleLocation::new(w_tree, 0, w_main + w_mask, "table, W"),
+        );
+    }
+
+    let omega = {
+        let shape = shared.iopp.statement.oracles[shared.shared.omega as usize]
+            .shape
+            .clone();
+        let oracle = iopp.statement.sent(shape);
+        let mut sample_rows = shared.iopp.statement.oracles[shared.shared.omega as usize]
+            .sample_rows
+            .clone();
+        for row in &mut sample_rows {
+            for form in &mut row.forms {
+                if form.oracle == shared.shared.omega {
+                    form.oracle = oracle;
+                }
+            }
+            for term in &mut row.terms {
+                if term.oracle == shared.shared.omega {
+                    term.oracle = oracle;
+                }
+            }
+            for unit in &mut row.units {
+                if unit.oracle == shared.shared.omega {
+                    unit.oracle = oracle;
+                }
+            }
+            for run in &mut row.runs {
+                if run.oracle == shared.shared.omega {
+                    run.oracle = oracle;
+                }
+            }
+        }
+        iopp.statement.oracles[oracle as usize].sample_rows = sample_rows;
+        oracle
+    };
+    let omega_tree = input
+        .lin
+        .omega_trees
+        .first()
+        .ok_or(FpError::Range {
+            context: "key-omega-tree",
+        })?
+        .number;
+    second_book.adopt(omega, OracleLocation::new(omega_tree, 0, 0, "table, Omega"));
+
+    let omega_lay = crate::fp::claims::VectorLay {
+        row_bits: crate::fp::tensor::ceil_log2(fixed.lin.omega.main_rows),
+        place_bits: crate::fp::code_eval::log_ell(
+            &iopp.statement.base[fixed.lin.omega.code as usize],
+        ),
+        rows_high: fixed.lin.omega_rows_high,
+    };
+    let w_lay = crate::fp::claims::VectorLay {
+        row_bits: crate::fp::tensor::ceil_log2(fixed.lin.w.main_rows),
+        place_bits: crate::fp::code_eval::log_ell(&iopp.statement.base[fixed.lin.w.code as usize]),
+        rows_high: fixed.lin.w_rows_high,
+    };
+    let dot = lin_dot_row(
+        &fixed.lin,
+        &first.claim.g,
+        &psi,
+        omega,
+        omega_lay,
+        first.w,
+        w_lay,
+    );
+    iopp.statement.join(first.own, omega);
+    iopp.statement.add_row(first.own, dot);
+    iopp.group = first.own;
+    iopp.base_ids = fixed
+        .lin
+        .test_own
+        .iter()
+        .map(|stage| stage.code as u64)
+        .collect();
+    iopp.mask_ids = fixed
+        .lin
+        .test_own
+        .iter()
+        .map(|stage| stage.mask_code as u64)
+        .collect();
+    second_chain.close(ChainKind::Algebraic, &[]);
+    let (own_layout, rows) = iopp.statement.begin_run(first.own);
+    let row = bat_combine(
+        &iopp.statement,
+        &own_layout,
+        &rows,
+        E::from_words(second_chain.draw_e()),
+    );
+    run_iopp_stages(
+        &mut cursor,
+        &mut second_chain,
+        &mut iopp,
+        &input.lin.own_stages,
+        0,
+        input.lin.own_stages.len(),
+        row,
+        &second_run,
+        "a request's own test",
+        bytes,
+        &input.setting,
+        crate::fp::analysis::Scope::Commit,
+        first.split,
+        first.mask,
+        Some(&second_book),
+        true,
+    )?;
+    if cursor.index != file_layout.fields().len() {
+        return Err(FpError::TrailingBytes {
+            context: "key-proof",
+            count: file_layout.fields().len() - cursor.index,
+        });
+    }
     Ok(())
 }
 

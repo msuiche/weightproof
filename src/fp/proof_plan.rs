@@ -238,7 +238,7 @@ pub fn plan_proof(input: &ProofLayoutInput) -> Result<FilePlan, FpError> {
     lin_shared(&mut shared, &input.setting, &input.lin)?;
     let mut second = vec![];
     plan_chain_start(&mut second, "second chain", true);
-    lin_second(&mut second, &input.setting, &input.lin)?;
+    lin_second(&mut second, &input.setting, &input.lin, 23)?;
     FilePlan::proof(
         [
             ChainPlan::new("first chain", first),
@@ -517,16 +517,23 @@ pub(crate) mod tests {
                 ],
                 folded_trees: vec![TreeSize::new("tree of the folded row; fold mask", 17, 456)],
                 omega_trees: vec![
-                    tree("tree of Omega", 96),
+                    tree("tree of Omega", 96)
+                        .numbered(1)
+                        .rooted("Omega, stage 1"),
                     TreeSize::new(
                         "tree of the mask of the split between Omega and the folded row",
                         13,
                         24,
-                    ),
+                    )
+                    .numbered(2),
                 ],
-                w_trees: vec![tree("tree of W; fold mask", 48)],
-                input_trees: vec![TreeSize::new("tree of a request's masks", 13, 24)],
-                table_tree: TreeSize::new("table", 23, 2048),
+                w_trees: vec![tree("tree of W; fold mask", 48)
+                    .rooted("table, W")
+                    .numbered(21)],
+                input_trees: vec![TreeSize::new("tree of a request's masks", 13, 24)
+                    .rooted("G0")
+                    .numbered(1)],
+                table_tree: TreeSize::new("table", 23, 2048).stored("table"),
                 columns: 53,
                 split: true,
                 one_time: false,

@@ -34,3 +34,9 @@ name = "fp_layout"
 path = "fuzz_targets/fp_layout.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fp_compact_proof"
+path = "fuzz_targets/fp_compact_proof.rs"
+test = false
+doc = false

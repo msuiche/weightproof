@@ -1,6 +1,6 @@
 //! SEND sampling and oracle-tree bookkeeping for request proofs.
 
-use alloc::{collections::BTreeMap, vec, vec::Vec};
+use alloc::{collections::BTreeMap, string::String, vec, vec::Vec};
 
 use crate::fp::{
     chain::{Chain, ChainKind},
@@ -43,6 +43,17 @@ fn read_samples_inner(
         .unwrap_or(0);
     for answer in 0..most {
         let (z, beta) = sample_seed(chain, bits);
+        #[cfg(feature = "std")]
+        if std::env::var_os("DUMP_SEND").is_some() {
+            eprintln!(
+                "RUST_SEND_SEED oracle={} z0={:016x} z1={:016x} beta={:016x} bits={}",
+                oracles[0],
+                z[0].0[0],
+                z.get(1).map_or(E::ZERO, |x| *x).0[0],
+                beta.0[0],
+                bits
+            );
+        }
         for &oracle in oracles {
             let shape = &statement.oracles[oracle as usize].shape;
             if answer >= shape.answers {
@@ -81,11 +92,23 @@ pub(crate) fn read_samples_after_root(
     read_samples_inner(cursor, chain, statement, oracles, context, true).map(|(answers, _)| answers)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct OracleLocation {
     tree: u32,
     main_at: usize,
     mask_at: usize,
+    root_context: String,
+}
+
+impl OracleLocation {
+    pub fn new(tree: u32, main_at: usize, mask_at: usize, root_context: &str) -> Self {
+        Self {
+            tree,
+            main_at,
+            mask_at,
+            root_context: root_context.into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -143,7 +166,7 @@ impl OracleBook {
                     .unwrap_or_else(|| {
                         classes.push((notice.leaf_class, log_n, mask_only));
                         classes.len() - 1
-                });
+                    });
                 tree_for[i] = at;
             }
         }
@@ -186,6 +209,7 @@ impl OracleBook {
                         tree: first_tree + local as u32,
                         main_at,
                         mask_at,
+                        root_context: context.into(),
                     },
                 );
                 main_at += notice.shape.main_rows as usize * notice.shape.main_deg as usize;
@@ -198,17 +222,19 @@ impl OracleBook {
             .copied()
             .filter(|&oracle| statement.oracles[oracle as usize].shape.answers != 0)
             .collect();
-        let (answers, answer_words) = read_samples_inner(
-            cursor,
-            chain,
-            statement,
-            &sampled,
-            context,
-            close_answers,
-        )?;
+        let (answers, answer_words) =
+            read_samples_inner(cursor, chain, statement, &sampled, context, close_answers)?;
         #[cfg(feature = "std")]
         if context == "G0" || context == "A0" {
-            eprintln!("{} sampled={:?} shapes={:?} words={:?}", context, sampled, ids.iter().map(|&id| statement.oracles[id as usize].shape.answers).collect::<Vec<_>>(), answer_words);
+            eprintln!(
+                "{} sampled={:?} shapes={:?} words={:?}",
+                context,
+                sampled,
+                ids.iter()
+                    .map(|&id| statement.oracles[id as usize].shape.answers)
+                    .collect::<Vec<_>>(),
+                answer_words
+            );
         }
         Ok(Sent {
             ids,
@@ -237,7 +263,10 @@ impl OracleBook {
             })?;
             let opening = openings
                 .iter()
-                .find(|opening| opening.tree_number == location.tree)
+                .find(|opening| {
+                    opening.tree_number == location.tree
+                        && opening.root_context == location.root_context
+                })
                 .ok_or(FpError::Range {
                     context: "oracle-opening",
                 })?;
@@ -253,7 +282,8 @@ impl OracleBook {
                 } else {
                     opening.column_e(bytes, position, location.main_at, shape.main_rows as usize)
                 };
-                let mask = opening.column_e(bytes, position, location.mask_at, shape.mask_rows as usize);
+                let mask =
+                    opening.column_e(bytes, position, location.mask_at, shape.mask_rows as usize);
                 if out.of.len() <= i {
                     out.of.push(vec![]);
                 }
@@ -280,7 +310,10 @@ impl OracleBook {
             })?;
             let opening = openings
                 .iter()
-                .find(|opening| opening.tree_number == location.tree)
+                .find(|opening| {
+                    opening.tree_number == location.tree
+                        && opening.root_context == location.root_context
+                })
                 .ok_or(FpError::Range {
                     context: "base-star",
                 })?;
@@ -308,7 +341,7 @@ impl OracleBook {
     }
 
     pub fn location(&self, oracle: u32) -> Option<OracleLocation> {
-        self.locations.get(&oracle).copied()
+        self.locations.get(&oracle).cloned()
     }
 
     pub fn adopt(&mut self, oracle: u32, location: OracleLocation) {

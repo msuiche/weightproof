@@ -8,7 +8,6 @@ use crate::fp::{
     forest::ProductLevel,
     layer::{LayerRun, Ten},
     model::{psc_begin, psc_row, stack_rounds, Aff, HFork, HStack, RoundName, Tr},
-    tensor::eq_table,
 };
 
 const D: u64 = 512;
@@ -52,11 +51,23 @@ fn pw(bits: u32) -> E {
 }
 
 fn t_of(k: u32) -> u32 {
-    if k < 16 { 16 - k } else { 0 }
+    if k < 16 {
+        16 - k
+    } else {
+        0
+    }
 }
 
 fn scale_index(value: E, index: u64) -> E {
     value * E::from_base(F(index))
+}
+
+fn signed_base(value: i64) -> E {
+    if value < 0 {
+        -E::from_base(F(value.unsigned_abs()))
+    } else {
+        E::from_base(F(value as u64))
+    }
 }
 
 fn shift(value: E, multiplier: u32) -> E {
@@ -216,10 +227,21 @@ impl<'a> LayerCheck<'a> {
         let c = self.run.fixture.call(segment);
         let eq = eq_top(&self.zj(call)[..c.l_j as usize]);
         let seg = c.seg(segment).unwrap();
-        let out: Vec<E> = seg.pos.iter().map(|&position| eq[position as usize]).collect();
+        let out: Vec<E> = seg
+            .pos
+            .iter()
+            .map(|&position| eq[position as usize])
+            .collect();
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            eprintln!("RUST_EW name={} lj={} z0={:016x} positions={:?} values={:?}", segment, c.l_j, self.zj(call)[0].0[0], &seg.pos[..seg.pos.len().min(4)], &out[..out.len().min(4)]);
+            eprintln!(
+                "RUST_EW name={} lj={} z0={:016x} positions={:?} values={:?}",
+                segment,
+                c.l_j,
+                self.zj(call)[0].0[0],
+                &seg.pos[..seg.pos.len().min(4)],
+                &out[..out.len().min(4)]
+            );
         }
         out
     }
@@ -250,10 +272,7 @@ impl<'a> LayerCheck<'a> {
         let offset = self.table_at(tensor.mat, point);
         let mut out = Aff::default();
         for xh in (a / S2) as usize..(b / S2) as usize {
-            out.add(
-                &self.long_a(offset, tensor, i, xh as u64 - x0 / S2),
-                wh[xh],
-            );
+            out.add(&self.long_a(offset, tensor, i, xh as u64 - x0 / S2), wh[xh]);
         }
         out
     }
@@ -293,7 +312,10 @@ impl<'a> LayerCheck<'a> {
         }
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            eprintln!("RUST_SITE w={:016x} k={} form={} sq={:016x} srh={:016x} out={:016x}", w.0[0], k, form, sq.c.0[0], srh.c.0[0], out.c.0[0]);
+            eprintln!(
+                "RUST_SITE w={:016x} k={} form={} sq={:016x} srh={:016x} out={:016x}",
+                w.0[0], k, form, sq.c.0[0], srh.c.0[0], out.c.0[0]
+            );
         }
         out
     }
@@ -304,7 +326,10 @@ impl<'a> LayerCheck<'a> {
         let out = s.clone().scaled(pw(top - k.max(16)));
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            eprintln!("RUST_HIGH w={:016x} k={} form={} srh={:016x} sc={:016x} out={:016x}", w.0[0], k, form, srh.c.0[0], s.c.0[0], out.c.0[0]);
+            eprintln!(
+                "RUST_HIGH w={:016x} k={} form={} srh={:016x} sc={:016x} out={:016x}",
+                w.0[0], k, form, srh.c.0[0], s.c.0[0], out.c.0[0]
+            );
         }
         out
     }
@@ -333,7 +358,11 @@ impl<'a> LayerCheck<'a> {
             v: dig(0, 8),
             c,
             s0: dig(45, 1),
-            sig: dig(44, 1).scaled(pw(1)) + dig(45, 1) + dig(46, 1).scaled(pw(8)) + dig(47, 1).scaled(pw(16)) + dig(48, 1).scaled(pw(24)),
+            sig: dig(44, 1).scaled(pw(1))
+                + dig(45, 1)
+                + dig(46, 1).scaled(pw(8))
+                + dig(47, 1).scaled(pw(16))
+                + dig(48, 1).scaled(pw(24)),
             l1: dig(49, 4),
             h1: dig(53, 4),
             r_lo: dig(57, 3),
@@ -373,9 +402,17 @@ impl<'a> LayerCheck<'a> {
             c,
             v_lo: dig(0, 6),
             v_hi: dig(6, 4),
-            a: dig(58, 1).scaled(pw(1)) + dig(59, 1) + dig(60, 1).scaled(pw(8)) + dig(61, 1).scaled(pw(16)),
+            a: dig(58, 1).scaled(pw(1))
+                + dig(59, 1)
+                + dig(60, 1).scaled(pw(8))
+                + dig(61, 1).scaled(pw(16)),
             b: dig(62, 1) + dig(63, 1).scaled(pw(8)),
-            sig: dig(58, 1).scaled(pw(1)) + dig(59, 1) + dig(60, 1).scaled(pw(8)) + dig(61, 1).scaled(pw(16)) + dig(62, 1).scaled(pw(24)) + dig(63, 1).scaled(pw(32)),
+            sig: dig(58, 1).scaled(pw(1))
+                + dig(59, 1)
+                + dig(60, 1).scaled(pw(8))
+                + dig(61, 1).scaled(pw(16))
+                + dig(62, 1).scaled(pw(24))
+                + dig(63, 1).scaled(pw(32)),
             s0: dig(59, 1),
             l1: dig(64, 5),
             h1: dig(69, 5),
@@ -540,8 +577,10 @@ impl<'a> LayerCheck<'a> {
                         _ => 1,
                     };
                     out.add(
-                        &(self.u3at(offset, tensor.off + (2 * layer + np as u64) * 99 + idx as u64)
-                            + Aff::constant(pw(7))),
+                        &(self.u3at(
+                            offset,
+                            tensor.off + (2 * layer + np as u64) * 99 + idx as u64,
+                        ) + Aff::constant(pw(7))),
                         shift(ew[x], mu),
                     );
                 }
@@ -550,7 +589,10 @@ impl<'a> LayerCheck<'a> {
             "CN1" | "CN2" => {
                 let mut b = Aff::default();
                 for x in 0..D {
-                    b.add(&self.sh_a(if segment == "CN1" { "a" } else { "m" }, short, layer, x), ew[x as usize]);
+                    b.add(
+                        &self.sh_a(if segment == "CN1" { "a" } else { "m" }, short, layer, x),
+                        ew[x as usize],
+                    );
                 }
                 return s(if segment == "CN1" { "aw" } else { "mw" })
                     + b.scaled(pw(28))
@@ -560,7 +602,7 @@ impl<'a> LayerCheck<'a> {
                 return s("qkw")
                     + (self.sba(&wh, 0, DQ, "q", layer, z, 0)
                         + self.sba(&wh, DQ, NQK, "kx", layer, z, DQ))
-                        .scaled(pw(28))
+                    .scaled(pw(28))
                     + Aff::constant(w * (pw(15) + pw(39)));
             }
             "CV" => return s("vw") + s("v").scaled(pw(28)) + Aff::constant(w * (pw(15) + pw(39))),
@@ -570,7 +612,11 @@ impl<'a> LayerCheck<'a> {
                     + Aff::constant(w * (pw(15) + pw(40)));
             }
             "G0" => return s("g0") + Aff::constant(w * pw(7)),
-            "CG" => return s("gh") + s("gc").scaled(pw(28)) + Aff::constant(w * (pw(14) + pw(15) + pw(35) + pw(40))),
+            "CG" => {
+                return s("gh")
+                    + s("gc").scaled(pw(28))
+                    + Aff::constant(w * (pw(14) + pw(15) + pw(35) + pw(40)))
+            }
             "XR" => {
                 let mut b = Aff::default();
                 for x in 0..D {
@@ -582,7 +628,8 @@ impl<'a> LayerCheck<'a> {
                 let mut q = Aff::default();
                 for x in 0..NE {
                     q.add(
-                        &(self.sh_a("ly", short, layer_m, x).scaled(pw(3)) + self.sh_a("l3", short, layer_m, x)),
+                        &(self.sh_a("ly", short, layer_m, x).scaled(pw(3))
+                            + self.sh_a("l3", short, layer_m, x)),
                         ew[x as usize],
                     );
                 }
@@ -597,7 +644,10 @@ impl<'a> LayerCheck<'a> {
             "LT" => {
                 let mut out = Aff::default();
                 for x in 0..NE {
-                    out.add(&(self.sh_a("lr", short, layer_m, x) + Aff::constant(pw(14))), shift(ew[x as usize], 2));
+                    out.add(
+                        &(self.sh_a("lr", short, layer_m, x) + Aff::constant(pw(14))),
+                        shift(ew[x as usize], 2),
+                    );
                 }
                 return out;
             }
@@ -605,7 +655,10 @@ impl<'a> LayerCheck<'a> {
                 let mut out = Aff::default();
                 let mut tail = Aff::default();
                 for x in (0..NE).rev() {
-                    out.add(&(self.sh_a("lr", short, layer_m, x) + tail.clone()), -ew[x as usize]);
+                    out.add(
+                        &(self.sh_a("lr", short, layer_m, x) + tail.clone()),
+                        -ew[x as usize],
+                    );
                     tail = tail + self.sh_a("sel", short, layer_m, x);
                 }
                 return out;
@@ -620,15 +673,24 @@ impl<'a> LayerCheck<'a> {
             "SEL" => {
                 let mut out = Aff::default();
                 for x in 0..NE {
-                    out.add(&self.sh_a("sel", short, layer_m, x), shift(ew[x as usize], 128));
+                    out.add(
+                        &self.sh_a("sel", short, layer_m, x),
+                        shift(ew[x as usize], 128),
+                    );
                 }
                 return out;
             }
-            "MR" => return (Aff::constant(pw(14)) + self.sh_a("sc", short, layer_m, 0).scaled(pw(17))).scaled(ew[0]),
+            "MR" => {
+                return (Aff::constant(pw(14)) + self.sh_a("sc", short, layer_m, 0).scaled(pw(17)))
+                    .scaled(ew[0])
+            }
             "L3" => {
                 let mut out = Aff::default();
                 for x in 0..NE {
-                    out.add(&self.sh_a("l3", short, layer_m, x), shift(ew[x as usize], 32));
+                    out.add(
+                        &self.sh_a("l3", short, layer_m, x),
+                        shift(ew[x as usize], 32),
+                    );
                 }
                 return out;
             }
@@ -637,7 +699,9 @@ impl<'a> LayerCheck<'a> {
                 for x in 0..NE {
                     out.add(
                         &(self.sh_a("ly", short, layer_m, x)
-                            + (self.sh_a("lr", short, layer_m, x) - self.sh_a("l3", short, layer_m, x)).scaled(pw(25))),
+                            + (self.sh_a("lr", short, layer_m, x)
+                                - self.sh_a("l3", short, layer_m, x))
+                            .scaled(pw(25))),
                         ew[x as usize],
                     );
                 }
@@ -701,7 +765,10 @@ pub fn led_lines5(row: &Row5, products: &[Aff], eps: E, two: &Aff) -> Vec<Aff> {
         - row.rr.clone().scaled(E::ONE + E::ONE);
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {
-        eprintln!("RUST_LED6 two={:016x} sig={:016x} s0={:016x} q1={:016x} rr={:016x} out={:016x}", two.c.0[0], row.sig.c.0[0], row.s0.c.0[0], row.q1.c.0[0], row.rr.c.0[0], e6.c.0[0]);
+        eprintln!(
+            "RUST_LED6 two={:016x} sig={:016x} s0={:016x} q1={:016x} rr={:016x} out={:016x}",
+            two.c.0[0], row.sig.c.0[0], row.s0.c.0[0], row.q1.c.0[0], row.rr.c.0[0], e6.c.0[0]
+        );
     }
     vec![
         e0,
@@ -773,7 +840,10 @@ impl LayerCheck<'_> {
                 let value = self.line(&segment.name, layer);
                 #[cfg(feature = "std")]
                 if std::env::var_os("DUMP_SHARED").is_some() {
-                    eprintln!("RUST_LINE name={} lam={} constant={:016x}", segment.name, layer, value.c.0[0]);
+                    eprintln!(
+                        "RUST_LINE name={} lam={} constant={:016x}",
+                        segment.name, layer, value.c.0[0]
+                    );
                 }
                 lines.add(&value, -el[layer as usize]);
                 for &position in &segment.pos {
@@ -793,7 +863,9 @@ impl LayerCheck<'_> {
             for column in 0..c.j {
                 if !weighed[(layer * c.j + column) as usize] {
                     weight += e[column as usize];
-                    laid[(self.run.forest.first[call] as u64 + ((layer * c.j + column) >> (self.run.forest.d_t - 6))) as usize] += 64;
+                    laid[(self.run.forest.first[call] as u64
+                        + ((layer * c.j + column) >> (self.run.forest.d_t - 6)))
+                        as usize] += 64;
                 }
             }
             pad_w += el[layer as usize] * weight;
@@ -806,7 +878,10 @@ impl LayerCheck<'_> {
         ) + lines.clone();
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            eprintln!("RUST_JOIN_PART q={} constant={:016x} lines={:016x} padw={:016x} alpha={:016x}", call, start.c.0[0], lines.c.0[0], pad_w.0[0], self.run.forest.alpha.0[0]);
+            eprintln!(
+                "RUST_JOIN_PART q={} constant={:016x} lines={:016x} padw={:016x} alpha={:016x}",
+                call, start.c.0[0], lines.c.0[0], pad_w.0[0], self.run.forest.alpha.0[0]
+            );
         }
         Ok((start, laid))
     }
@@ -819,7 +894,12 @@ impl LayerCheck<'_> {
         pw(t_of(kl_m(layer, index)))
     }
 
-    pub fn stack(&mut self, f: &mut HFork, tr: &mut Tr, slot: &mut u32) -> Result<StackOut, FpError> {
+    pub fn stack(
+        &mut self,
+        f: &mut HFork,
+        tr: &mut Tr,
+        slot: &mut u32,
+    ) -> Result<StackOut, FpError> {
         let mut panels = Vec::new();
         let mut next_v = 0i64;
         let ac = [0, 1, 2];
@@ -835,26 +915,41 @@ impl LayerCheck<'_> {
                         (
                             D,
                             (0..LAM)
-                                .map(|layer| el[layer as usize] * Self::k_t(u64::from(!self.run.fixture.first) * LAM + layer, if up { 5 } else { 4 }))
+                                .map(|layer| {
+                                    el[layer as usize]
+                                        * Self::k_t(
+                                            u64::from(!self.run.fixture.first) * LAM + layer,
+                                            if up { 5 } else { 4 },
+                                        )
+                                })
                                 .collect(),
                         )
                     }
                     "V" => (
                         D,
                         (0..LAM)
-                            .map(|layer| el[layer as usize] * Self::k_t(u64::from(!self.run.fixture.first) * LAM + layer, 2))
+                            .map(|layer| {
+                                el[layer as usize]
+                                    * Self::k_t(u64::from(!self.run.fixture.first) * LAM + layer, 2)
+                            })
                             .collect(),
                     ),
                     "O" => (
                         DQ,
                         (0..LAM)
-                            .map(|layer| el[layer as usize] * Self::k_t(u64::from(!self.run.fixture.first) * LAM + layer, 3))
+                            .map(|layer| {
+                                el[layer as usize]
+                                    * Self::k_t(u64::from(!self.run.fixture.first) * LAM + layer, 3)
+                            })
                             .collect(),
                     ),
                     "D" => (
                         F_WIDTH,
                         (0..LAM)
-                            .map(|layer| el[layer as usize] * Self::k_t(u64::from(!self.run.fixture.first) * LAM + layer, 6))
+                            .map(|layer| {
+                                el[layer as usize]
+                                    * Self::k_t(u64::from(!self.run.fixture.first) * LAM + layer, 6)
+                            })
                             .collect(),
                     ),
                     "LR" => (
@@ -862,7 +957,11 @@ impl LayerCheck<'_> {
                         (0..LAM_M)
                             .map(|i| {
                                 let layer = 2 * i + 1;
-                                el[layer as usize] * Self::k_tm(u64::from(!self.run.fixture.first) * LAM + layer, 0)
+                                el[layer as usize]
+                                    * Self::k_tm(
+                                        u64::from(!self.run.fixture.first) * LAM + layer,
+                                        0,
+                                    )
                             })
                             .collect(),
                     ),
@@ -934,10 +1033,16 @@ impl LayerCheck<'_> {
                             virt: -1,
                             v0,
                             wt: (0..LAM)
-                                .map(|layer| el[layer as usize] * Self::k_t(u64::from(!self.run.fixture.first) * LAM + layer, 0))
+                                .map(|layer| {
+                                    el[layer as usize]
+                                        * Self::k_t(
+                                            u64::from(!self.run.fixture.first) * LAM + layer,
+                                            0,
+                                        )
+                                })
                                 .collect(),
                             sl: vec![],
-                    weights: vec![],
+                            weights: vec![],
                             xx: vec![],
                         });
                     }
@@ -955,7 +1060,9 @@ impl LayerCheck<'_> {
                             tri: false,
                             virt: -1,
                             v0: -1,
-                            wt: (0..LAM_M).map(|layer| el[(2 * layer + 1) as usize]).collect(),
+                            wt: (0..LAM_M)
+                                .map(|layer| el[(2 * layer + 1) as usize])
+                                .collect(),
                             sl: vec![],
                             xx: vec![],
                             weights: ew,
@@ -971,12 +1078,15 @@ impl LayerCheck<'_> {
                             ni: LAM_M,
                             ny: NE,
                             wy: crate::fp::tensor::ceil_log2(NE),
-                            w: crate::fp::tensor::ceil_log2(LAM_M) + crate::fp::tensor::ceil_log2(NE),
+                            w: crate::fp::tensor::ceil_log2(LAM_M)
+                                + crate::fp::tensor::ceil_log2(NE),
                             off: 0,
                             tri: false,
                             virt: -1,
                             v0: -1,
-                            wt: (0..LAM_M).map(|layer| el[(2 * layer + 1) as usize] * w_s).collect(),
+                            wt: (0..LAM_M)
+                                .map(|layer| el[(2 * layer + 1) as usize] * w_s)
+                                .collect(),
                             sl: vec![],
                             xx: vec![],
                             weights: ew,
@@ -992,13 +1102,21 @@ impl LayerCheck<'_> {
                             let (virt, wt) = if sn == "D" {
                                 (
                                     1 + lm as i64,
-                                    el[layer as usize] * Self::k_t(u64::from(!self.run.fixture.first) * LAM + layer, 6),
+                                    el[layer as usize]
+                                        * Self::k_t(
+                                            u64::from(!self.run.fixture.first) * LAM + layer,
+                                            6,
+                                        ),
                                 )
                             } else {
                                 let up = sn == "U";
                                 (
                                     -1,
-                                    el[layer as usize] * Self::k_tm(u64::from(!self.run.fixture.first) * LAM + layer, if up { 2 } else { 1 }),
+                                    el[layer as usize]
+                                        * Self::k_tm(
+                                            u64::from(!self.run.fixture.first) * LAM + layer,
+                                            if up { 2 } else { 1 },
+                                        ),
                                 )
                             };
                             let v0 = next_v;
@@ -1016,7 +1134,8 @@ impl LayerCheck<'_> {
                                 ni: NE,
                                 ny,
                                 wy: crate::fp::tensor::ceil_log2(ny),
-                                w: crate::fp::tensor::ceil_log2(NE) + crate::fp::tensor::ceil_log2(ny),
+                                w: crate::fp::tensor::ceil_log2(NE)
+                                    + crate::fp::tensor::ceil_log2(ny),
                                 off: 0,
                                 tri: true,
                                 virt,
@@ -1086,7 +1205,8 @@ impl LayerCheck<'_> {
                 context: "layer-claim-count",
             });
         }
-        let s_a0 = crate::fp::model::psc_ends(f, tr, slot, &mut stack.p, 2, (2 + nvirt + nclp) as u32)?;
+        let s_a0 =
+            crate::fp::model::psc_ends(f, tr, slot, &mut stack.p, 2, (2 + nvirt + nclp) as u32)?;
         let s_h1 = s_a0 + 1;
         let s_b0 = s_h1 + nvirt as u32;
         let s_v = s_b0 + 1;
@@ -1096,7 +1216,8 @@ impl LayerCheck<'_> {
         let mut b_s = f.shown(s_b0)?;
         let mut w_d = 0;
         for panel in &panels {
-            let sb = crate::fp::model::eq_low_at(&stack.rs, panel.w, stack.lam, panel.off >> panel.w);
+            let sb =
+                crate::fp::model::eq_low_at(&stack.rs, panel.w, stack.lam, panel.off >> panel.w);
             let ey = crate::fp::model::eq_low(&stack.rs, 0, panel.wy);
             let ei = crate::fp::model::eq_low(&stack.rs, panel.wy, panel.w);
             let co = sb * om[panel.claim] * panel.ec;
@@ -1105,12 +1226,17 @@ impl LayerCheck<'_> {
                 eprintln!("RUST_PANEL_VALUES name={} off={} w={} sb={:016x} ei0={:016x} ei1={:016x} sv0={:016x} sv1={:016x} sb0={:016x}", panel.sn, panel.off, panel.w, sb.0[0], ei[0].0[0], ei[1].0[0], f.shown(s_v)?.0[0], f.shown(s_v + 1)?.0[0], f.shown(s_b0)?.0[0]);
             }
             if panel.tri {
-                let s1 = (0..NE).map(|e| panel.sl[e as usize] * ei[e as usize]).fold(E::ZERO, |a, b| a + b);
+                let s1 = (0..NE)
+                    .map(|e| panel.sl[e as usize] * ei[e as usize])
+                    .fold(E::ZERO, |a, b| a + b);
                 if panel.virt >= 0 {
                     a_s += co * panel.wt[0] * s1 * f.shown(s_h1 + panel.virt as u32)?;
                 } else {
                     for k2 in 0..panel.ny {
-                        a_lin.add(&panel.xx[k2 as usize], co * panel.wt[0] * s1 * ey[k2 as usize]);
+                        a_lin.add(
+                            &panel.xx[k2 as usize],
+                            co * panel.wt[0] * s1 * ey[k2 as usize],
+                        );
                     }
                 }
                 b_s += sb * f.shown(s_v + panel.v0 as u32)?;
@@ -1125,14 +1251,21 @@ impl LayerCheck<'_> {
                 w_d = panel.w;
                 a_s += sb * om[panel.claim] * f.shown(s_h1 + panel.virt as u32)?;
                 for i in 0..panel.ni {
-                    b_s += sb * ei[i as usize] * panel.ec * panel.wt[i as usize] * f.shown(s_v + panel.v0 as u32 + i as u32)?;
+                    b_s += sb
+                        * ei[i as usize]
+                        * panel.ec
+                        * panel.wt[i as usize]
+                        * f.shown(s_v + panel.v0 as u32 + i as u32)?;
                 }
                 continue;
             }
             for i in 0..panel.ni {
                 for yv in 0..panel.ny {
                     let a = self.panel_a(f, panel, i, yv)?;
-                    a_lin.add(&a, co * panel.wt[i as usize] * ei[i as usize] * ey[yv as usize]);
+                    a_lin.add(
+                        &a,
+                        co * panel.wt[i as usize] * ei[i as usize] * ey[yv as usize],
+                    );
                     if panel.v0 < 0 {
                         let b = self.panel_b(panel, i, yv)?;
                         b_lin.add(&b, sb * ei[i as usize] * ey[yv as usize]);
@@ -1144,11 +1277,17 @@ impl LayerCheck<'_> {
             }
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() {
-                eprintln!("RUST_PANEL_CONTRIB name={} as={:016x} bs={:016x}", panel.sn, a_s.0[0], b_s.0[0]);
+                eprintln!(
+                    "RUST_PANEL_CONTRIB name={} as={:016x} bs={:016x}",
+                    panel.sn, a_s.0[0], b_s.0[0]
+                );
             }
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() {
-                eprintln!("RUST_ALIN_CONTRIB name={} alin={:016x}", panel.sn, a_lin.c.0[0]);
+                eprintln!(
+                    "RUST_ALIN_CONTRIB name={} alin={:016x}",
+                    panel.sn, a_lin.c.0[0]
+                );
             }
         }
         if w_d != 2 + LPF {
@@ -1165,7 +1304,10 @@ impl LayerCheck<'_> {
         if std::env::var_os("DUMP_SHARED").is_some() {
             eprintln!("RUST_STACK_ROW_OUT constant={:016x}", row_s.c.0[0]);
         }
-        let mut rho = (0..w_d).rev().map(|v| stack.rs[v as usize]).collect::<Vec<_>>();
+        let mut rho = (0..w_d)
+            .rev()
+            .map(|v| stack.rs[v as usize])
+            .collect::<Vec<_>>();
         rho.extend_from_slice(&self.run.points["zt"]);
         let hd = crate::fp::forest::read_product_level(
             f,
@@ -1176,7 +1318,9 @@ impl LayerCheck<'_> {
             &mut Aff::slot(s_h1),
             &order_range(18),
         )?;
-        self.run.points.insert("Z_a".into(), hd.r[hd.r.len() - 8..].to_vec());
+        self.run
+            .points
+            .insert("Z_a".into(), hd.r[hd.r.len() - 8..].to_vec());
         let after_hd = *slot;
         let hd2 = if true {
             let mut rho = tr.point(RoundName::Join, 1)?;
@@ -1196,7 +1340,9 @@ impl LayerCheck<'_> {
                 &mut start,
                 &order_range(16),
             )?;
-            self.run.points.insert("Z_b".into(), level.r[level.r.len() - 8..].to_vec());
+            self.run
+                .points
+                .insert("Z_b".into(), level.r[level.r.len() - 8..].to_vec());
             Some(level)
         } else {
             None
@@ -1229,17 +1375,25 @@ impl LayerCheck<'_> {
             "O" => Ok(self.sh_a("o", "zt", i, yv)),
             "N1" | "N2" => {
                 let n2 = u32::from(panel.sn == "N2");
-                Ok(Aff::constant(f.shown(self.run.t_t.s_end + (2 * i + n2 as u64) as u32)?))
+                Ok(Aff::constant(
+                    f.shown(self.run.t_t.s_end + (2 * i + n2 as u64) as u32)?,
+                ))
             }
             "QK" => Ok(self.sh_a("a", "rt", i, yv)),
             "XR" => {
                 #[cfg(feature = "std")]
                 if std::env::var_os("DUMP_SHARED").is_some() {
-                    eprintln!("RUST_XR_SC i={} value={:016x}", i, f.shown(self.run.s_sc + i as u32)?.0[0]);
+                    eprintln!(
+                        "RUST_XR_SC i={} value={:016x}",
+                        i,
+                        f.shown(self.run.s_sc + i as u32)?.0[0]
+                    );
                 }
                 Ok(Aff::constant(f.shown(self.run.s_sc + i as u32)?))
             }
-            "DD" | "MR" => Ok(Aff::constant(f.shown(self.run.s_sel + (i * NE + yv) as u32)?)),
+            "DD" | "MR" => Ok(Aff::constant(
+                f.shown(self.run.s_sel + (i * NE + yv) as u32)?,
+            )),
             _ => unreachable!(),
         }
     }
@@ -1253,7 +1407,10 @@ impl LayerCheck<'_> {
             "XR" => {
                 let mut out = Aff::default();
                 for x in 0..D {
-                    out.add(&self.sh_a("m", "rt", 2 * i + 1, x), panel.weights[x as usize]);
+                    out.add(
+                        &self.sh_a("m", "rt", 2 * i + 1, x),
+                        panel.weights[x as usize],
+                    );
                 }
                 Ok(out)
             }
@@ -1275,9 +1432,18 @@ pub struct WeightMerge {
 }
 
 fn build_claims(run: &LayerRun, rs: &[E]) -> Result<Vec<crate::fp::weights::WsClaim>, FpError> {
+    #[cfg(feature = "std")]
+    eprintln!(
+        "RUST_STACK_RS first={} {:?}",
+        run.fixture.first,
+        rs.iter().take(16).map(|x| x.0[0]).collect::<Vec<_>>()
+    );
     let lay = crate::fp::weights::ws_lay();
     let ui_of = |x: u32, l: u32| -> Option<u32> {
-        lay.u.iter().position(|unit| unit.x == x && unit.l == l).map(|i| i as u32)
+        lay.u
+            .iter()
+            .position(|unit| unit.x == x && unit.l == l)
+            .map(|i| i as u32)
     };
     let fac_rs = |g: &crate::fp::weights::WsGrp, lo0: i32, wtot: i32| {
         let mut out = crate::fp::weights::WsFac {
@@ -1286,15 +1452,41 @@ fn build_claims(run: &LayerRun, rs: &[E]) -> Result<Vec<crate::fp::weights::WsCl
             av: vec![],
         };
         for i in 0..g.z {
-            out.pt.push(rs[(lo0 + g.z - 1 - i) as usize]);
+            let index = (lo0 + g.z - 1 - i) as usize;
+            #[cfg(feature = "std")]
+            if g.name == "e" {
+                eprintln!(
+                    "RUST_FAC_RS lo0={} z={} i={} index={} value={:016x}",
+                    lo0, g.z, i, index, rs[index].0[0]
+                );
+            }
+            out.pt.push(rs[index]);
         }
-        out.hv = crate::fp::model::eq_low(rs, (lo0 + g.z) as u32, (lo0 + wtot) as u32);
+        let point: Vec<E> = rs[(lo0 + g.z) as usize..(lo0 + wtot) as usize]
+            .iter()
+            .rev()
+            .copied()
+            .collect();
+        out.hv = crate::fp::tensor::eq_table(&point);
         out
     };
     let fac_ew = |g: &crate::fp::weights::WsGrp, sn: &str, x0: u64| {
-        let q = run.fixture.calls.iter().position(|call| call.seg(sn).is_some()).unwrap();
+        let q = run
+            .fixture
+            .calls
+            .iter()
+            .position(|call| call.seg(sn).is_some())
+            .unwrap();
         let c = &run.fixture.calls[q];
-        let z = &run.forest.calls[q].zk[..c.l_j as usize];
+        let z = &run.forest.calls[q].zk[2..];
+        #[cfg(feature = "std")]
+        if !run.fixture.first && sn == "G" && g.name == "x" {
+            eprintln!(
+                "RUST_ZJ sn={} z={:?}",
+                sn,
+                z.iter().map(|x| x.0[0]).collect::<Vec<_>>()
+            );
+        }
         let mut out = crate::fp::weights::WsFac {
             hv: vec![],
             pt: vec![],
@@ -1307,22 +1499,42 @@ fn build_claims(run: &LayerRun, rs: &[E]) -> Result<Vec<crate::fp::weights::WsCl
         let s = c.seg(sn).unwrap();
         for xh in 0..g.o {
             let at = x0 + ((xh as u64) << g.z);
-            out.hv.push(e[(s.pos[at as usize] >> (g.z as u32)) as usize]);
+            out.hv
+                .push(e[(s.pos[at as usize] >> (g.z as u32)) as usize]);
         }
         out
     };
     let mut claims = Vec::new();
-    let mut claim = |x: u32, lam: u32, fac: &dyn Fn(&crate::fp::weights::WsGrp) -> crate::fp::weights::WsFac| {
-        let ui = ui_of(x, lam).ok_or(FpError::Range {
-            context: "layer-claim-unit",
-        })?;
-        let unit = &lay.u[ui as usize];
-        claims.push(crate::fp::weights::WsClaim {
-            ui,
-            f: unit.g.iter().map(fac).collect(),
-        });
-        Ok::<(), FpError>(())
-    };
+    let mut claim =
+        |x: u32,
+         lam: u32,
+         fac: &dyn Fn(&crate::fp::weights::WsGrp) -> crate::fp::weights::WsFac| {
+            let ui = ui_of(x, lam).ok_or(FpError::Range {
+                context: "layer-claim-unit",
+            })?;
+            let unit = &lay.u[ui as usize];
+            claims.push(crate::fp::weights::WsClaim {
+                ui,
+                f: unit.g.iter().map(fac).collect(),
+            });
+            #[cfg(feature = "std")]
+            if ui == 35 {
+                let last = claims.last().unwrap();
+                eprintln!(
+                    "RUST_CLAIM_F ui={} x={} l={} groups={:?} pt={:?}",
+                    ui,
+                    unit.x,
+                    unit.l,
+                    unit.g.iter().map(|group| group.name).collect::<Vec<_>>(),
+                    last.f
+                        .iter()
+                        .map(|factor| factor.pt.iter().map(|x| x.0[0]).collect::<Vec<_>>())
+                        .collect::<Vec<_>>()
+                );
+            }
+            Ok::<(), FpError>(())
+        };
+    let layer0 = if run.fixture.first { 0 } else { 4 };
     for &ci in &[0usize, 1, 2] {
         let c = &run.forest.calls[ci];
         for segment in &run.fixture.calls[ci].segs {
@@ -1331,11 +1543,23 @@ fn build_claims(run: &LayerRun, rs: &[E]) -> Result<Vec<crate::fp::weights::WsCl
                 continue;
             }
             for i in 0..if sn == "LR" { 2 } else { 4 } {
-                let lam = if sn == "LR" { 2 * i + 1 } else { i } as u32;
+                let lam = (if sn == "LR" { 2 * i + 1 } else { i } as u32) + layer0;
                 let mo = lam % 2 == 1;
                 let x = match sn {
-                    "G" => if mo { 5 } else { 3 },
-                    "U" => if mo { 6 } else { 4 },
+                    "G" => {
+                        if mo {
+                            5
+                        } else {
+                            3
+                        }
+                    }
+                    "U" => {
+                        if mo {
+                            6
+                        } else {
+                            4
+                        }
+                    }
                     "V" => 1,
                     "O" => 2,
                     "D" => 9,
@@ -1362,8 +1586,23 @@ fn build_claims(run: &LayerRun, rs: &[E]) -> Result<Vec<crate::fp::weights::WsCl
             if sn == "QK" {
                 let et = eq_top(&run.t_t.r);
                 for lam in 0..4u32 {
-                    let l = lam;
+                    let l = lam + layer0;
                     let mut kap = vec![E::ZERO; 128];
+                    #[cfg(feature = "std")]
+                    if l == 0 || l == 4 {
+                        eprintln!(
+                            "RUST_TT_R l={} zt={:?} r={:?}",
+                            l,
+                            run.points["zt"].iter().map(|x| x.0[0]).collect::<Vec<_>>(),
+                            run.t_t.r.iter().map(|x| x.0[0]).collect::<Vec<_>>()
+                        );
+                    }
+                    let lfc = {
+                        let c = &run.fixture.calls[ti];
+                        let z = &run.forest.calls[ti].zk[2..];
+                        let point = &z[(c.l_j as usize - 7)..c.l_j as usize];
+                        eq_top(point)
+                    };
                     for i in 0..64u64 {
                         let mut ct = E::ZERO;
                         let mut st = E::ZERO;
@@ -1371,52 +1610,67 @@ fn build_claims(run: &LayerRun, rs: &[E]) -> Result<Vec<crate::fp::weights::WsCl
                             let cv = rope_c(l, t, i, false);
                             let sv = rope_c(l, t, i, true);
                             if cv != 0 {
-                                ct += et[t as usize] * E::from_base(F(cv as u64));
+                                ct += et[t as usize] * signed_base(cv);
                             }
                             if sv != 0 {
-                                st += et[t as usize] * E::from_base(F(sv as u64));
+                                st += et[t as usize] * signed_base(sv);
                             }
                         }
-                        let c = &run.fixture.calls[ti];
-                        let z = &run.forest.calls[ti].zk[..c.l_j as usize];
-                        let lfc = eq_top(&z[(c.l_j as usize - 7)..]);
-                        kap[2 * i as usize] = ct * lfc[2 * i as usize] + st * lfc[2 * i as usize + 1];
-                        kap[2 * i as usize + 1] = ct * lfc[2 * i as usize + 1] - st * lfc[2 * i as usize];
+                        kap[2 * i as usize] =
+                            ct * lfc[2 * i as usize] + st * lfc[2 * i as usize + 1];
+                        kap[2 * i as usize + 1] =
+                            ct * lfc[2 * i as usize + 1] - st * lfc[2 * i as usize];
                     }
-                    claim(0, lam, &|g| {
+                    #[cfg(feature = "std")]
+                    if l == 0 || l == 4 {
+                        eprintln!(
+                            "RUST_QK_ET l={} et={:?} lfc={:?}",
+                            l,
+                            et.iter().take(6).map(|x| x.0[0]).collect::<Vec<_>>(),
+                            lfc.iter().take(6).map(|x| x.0[0]).collect::<Vec<_>>()
+                        );
+                    }
+                    let ah = (0..64)
+                        .map(|hd| {
+                            if hd >= 6 {
+                                return E::ZERO;
+                            }
+                            let tq = crate::fp::layer::Ten {
+                                name: "q".into(),
+                                mat: 3,
+                                nl: 2,
+                                cnt: 4,
+                                j: 512,
+                                off: 0,
+                            };
+                            let tk = crate::fp::layer::Ten {
+                                name: "kx".into(),
+                                mat: 3,
+                                nl: 2,
+                                cnt: 4,
+                                j: 256,
+                                off: 4096,
+                            };
+                            let at = if hd < 4 {
+                                head_feat(&tq, hd, 128)
+                            } else {
+                                tq.j + head_feat(&tk, hd - 4, 128)
+                            };
+                            let c = &run.fixture.calls[ti];
+                            let z = &run.forest.calls[ti].zk[2..];
+                            let e = eq_top(&z[..c.l_j as usize - 7]);
+                            let seg = c.seg("QK").unwrap();
+                            e[(seg.pos[at as usize] / 128) as usize]
+                        })
+                        .collect::<Vec<_>>();
+                    #[cfg(feature = "std")]
+                    eprintln!("RUST_QK_AV l={} hd={:?} cd={:?}", l, &ah[..6], &kap[..6]);
+                    claim(0, l, &|g| {
                         if g.name == "hd" {
                             crate::fp::weights::WsFac {
                                 hv: vec![],
                                 pt: vec![],
-                                av: (0..64).map(|hd| {
-                                    if hd >= 6 {
-                                        return E::ZERO;
-                                    }
-                                    let tq = crate::fp::layer::Ten {
-                                        name: "q".into(),
-                                        mat: 3,
-                                        nl: 2,
-                                        cnt: 4,
-                                        j: 512,
-                                        off: 0,
-                                    };
-                                    let tk = crate::fp::layer::Ten {
-                                        name: "kx".into(),
-                                        mat: 3,
-                                        nl: 2,
-                                        cnt: 4,
-                                        j: 256,
-                                        off: 4096,
-                                    };
-                                    let at = if hd < 4 {
-                                        head_feat(&tq, hd, 128)
-                                    } else {
-                                        tq.j + head_feat(&tk, hd - 4, 128)
-                                    };
-                                    let c = &run.fixture.calls[ti];
-                                    let seg = c.seg("QK").unwrap();
-                                    E::from_base(F(seg.pos[at as usize]))
-                                }).collect(),
+                                av: ah.clone(),
                             }
                         } else if g.name == "cd" {
                             crate::fp::weights::WsFac {
@@ -1432,7 +1686,7 @@ fn build_claims(run: &LayerRun, rs: &[E]) -> Result<Vec<crate::fp::weights::WsCl
             } else if matches!(sn, "G" | "U" | "D") {
                 for lm in 0..2u32 {
                     let wk = crate::fp::tensor::ceil_log2(match sn {
-                        "D" => F_WIDTH,
+                        "D" => FE,
                         _ => D,
                     });
                     let x = match sn {
@@ -1440,7 +1694,7 @@ fn build_claims(run: &LayerRun, rs: &[E]) -> Result<Vec<crate::fp::weights::WsCl
                         "U" => 8,
                         _ => 10,
                     };
-                    let lam = 2 * lm + 1;
+                    let lam = 2 * lm + 1 + layer0;
                     claim(x, lam, &|g| {
                         if g.name == "kk" {
                             fac_rs(g, 0, wk as i32)
@@ -1459,26 +1713,44 @@ fn build_claims(run: &LayerRun, rs: &[E]) -> Result<Vec<crate::fp::weights::WsCl
             context: "layer-claim-unit",
         })?;
         let unit = &lay.u[ui as usize];
-        let et = eq_top(&run.points["Z_E"]);
+        let z_e = &run.points["Z_E"];
+        let et = eq_top(&z_e[z_e.len() - LT as usize..]);
+        let mut pnt = run.tkh.clone();
+        pnt.extend_from_slice(&z_e[..z_e.len() - LT as usize]);
         claims.push(crate::fp::weights::WsClaim {
             ui,
-            f: unit.g.iter().map(|g| {
-                if g.name == "v" {
-                    let mut av = vec![E::ZERO; 512];
-                    for t in 0..64 {
-                        av[run.tokv[t] as usize] += et[t];
+            f: unit
+                .g
+                .iter()
+                .map(|g| {
+                    if g.name == "v" {
+                        let mut av = vec![E::ZERO; 512];
+                        for t in 0..64 {
+                            av[run.tokv[t] as usize] += et[t];
+                        }
+                        crate::fp::weights::WsFac {
+                            hv: vec![],
+                            pt: vec![],
+                            av,
+                        }
+                    } else {
+                        let z = g.z as usize;
+                        crate::fp::weights::WsFac {
+                            hv: eq_top(&pnt[..pnt.len() - z]),
+                            pt: pnt[pnt.len() - z..].to_vec(),
+                            av: vec![],
+                        }
                     }
-                    crate::fp::weights::WsFac {
-                        hv: vec![],
-                        pt: vec![],
-                        av,
-                    }
-                } else {
-                    fac_rs(g, 0, 9)
-                }
-            }).collect(),
+                })
+                .collect(),
         });
     }
+    #[cfg(feature = "std")]
+    eprintln!(
+        "RUST_BUILD_CLAIMS first={} units={:?}",
+        run.fixture.first,
+        claims.iter().map(|claim| claim.ui).collect::<Vec<_>>()
+    );
     if claims.len() as u64 != run.fixture.ncl as u64 {
         return Err(FpError::Range {
             context: "layer-claim-count",
@@ -1500,7 +1772,12 @@ fn rope_c(layer: u32, t: u64, i: u64, sine: bool) -> i64 {
         return if sine { 0 } else { 4096 };
     }
     let angle = (t as f64) * libm::pow(10000.0, -2.0 * i as f64 / 128.0);
-    let value = 4096.0 * if sine { libm::sin(angle) } else { libm::cos(angle) };
+    let value = 4096.0
+        * if sine {
+            libm::sin(angle)
+        } else {
+            libm::cos(angle)
+        };
     libm::round(value) as i64
 }
 
@@ -1524,6 +1801,8 @@ pub fn ws_fork_merge(
         0
     };
     let rho = tr.batch(values.len())?;
+    #[cfg(feature = "std")]
+    eprintln!("RUST_MERGE_RHO first={:016x}", rho[0].0[0]);
     let mut start = Aff::default();
     for (a, &slot) in values.iter().enumerate() {
         start.add(&Aff::slot(slot), rho[a]);
@@ -1531,17 +1810,36 @@ pub fn ws_fork_merge(
     let mut p = psc_begin(f, tr, slot, start)?;
     let mut rm = Vec::with_capacity(11);
     for _ in 0..11 {
-        rm.push(crate::fp::model::round_in(f, tr, slot, crate::fp::model::RoundForm::Sum2, &mut p, E::ZERO, 0)?);
+        rm.push(crate::fp::model::round_in(
+            f,
+            tr,
+            slot,
+            crate::fp::model::RoundForm::Sum2,
+            &mut p,
+            E::ZERO,
+            0,
+        )?);
     }
     let s_fv = crate::fp::model::psc_ends(f, tr, slot, &mut p, 1, 1)?;
     let fvp = f.shown(s_fv)?;
     let beta = p.r[p.r.len() - 1];
+    #[cfg(feature = "std")]
+    eprintln!(
+        "RUST_MERGE_RM {:?}",
+        rm.iter().map(|x| x.0[0]).collect::<Vec<_>>()
+    );
     let lay = crate::fp::weights::ws_lay();
     let rec = stack
         .claims
         .iter()
         .enumerate()
-        .map(|(a, claim)| crate::fp::weights::ws_row_part(&lay, claim, rho[a] * crate::fp::weights::ws_eps_t(&lay, claim, &rm)))
+        .map(|(a, claim)| {
+            crate::fp::weights::ws_row_part(
+                &lay,
+                claim,
+                rho[a] * crate::fp::weights::ws_eps_t(&lay, claim, &rm),
+            )
+        })
         .collect();
     Ok(WeightMerge {
         fvp,
@@ -1569,7 +1867,12 @@ impl LayerCheck<'_> {
         for (row_index, row) in self.run.forest.rows.iter().enumerate() {
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() && row_index == 55 {
-                eprintln!("RUST_FOREST_ROW_ADD index={} n={} slots={:?}", row_index, f.n_claim, row.s.iter().map(|x| x.0).take(5).collect::<Vec<_>>());
+                eprintln!(
+                    "RUST_FOREST_ROW_ADD index={} n={} slots={:?}",
+                    row_index,
+                    f.n_claim,
+                    row.s.iter().map(|x| x.0).take(5).collect::<Vec<_>>()
+                );
             }
             f.lin(row.clone());
         }
@@ -1589,7 +1892,10 @@ impl LayerCheck<'_> {
                         } else {
                             self.u3at(t_a, xs.cell(limb, i - 1, 0) / S2 + kh)
                         };
-                        a.add(&form, -e[(i * 512 / S2 + kh) as usize] * self.run.gp[limb as usize]);
+                        a.add(
+                            &form,
+                            -e[(i * 512 / S2 + kh) as usize] * self.run.gp[limb as usize],
+                        );
                     }
                 }
             }
@@ -1632,13 +1938,20 @@ impl LayerCheck<'_> {
         }
         for (i, row) in rows.iter().enumerate() {
             for s in 0..9 {
-                let out = Aff::slot(self.run.s_w + (9 * i + s) as u32)
-                    + row.c[s].clone()
+                let out = Aff::slot(self.run.s_w + (9 * i + s) as u32) + row.c[s].clone()
                     - row.digits[s].clone()
                     - row.c[s + 1].clone().scaled(pw(8));
                 #[cfg(feature = "std")]
                 if std::env::var_os("DUMP_SHARED").is_some() {
-                    eprintln!("RUST_CARRY i={} s={} cs={:016x} dg={:016x} next={:016x} out={:016x}", i, s, row.c[s].c.0[0], row.digits[s].c.0[0], row.c[s + 1].c.0[0], out.c.0[0]);
+                    eprintln!(
+                        "RUST_CARRY i={} s={} cs={:016x} dg={:016x} next={:016x} out={:016x}",
+                        i,
+                        s,
+                        row.c[s].c.0[0],
+                        row.digits[s].c.0[0],
+                        row.c[s + 1].c.0[0],
+                        out.c.0[0]
+                    );
                 }
                 f.lin(out);
             }
@@ -1648,7 +1961,10 @@ impl LayerCheck<'_> {
                 .map(|j| Aff::slot(self.run.s_pv + (7 * i + j) as u32))
                 .collect();
             let n = i % 2;
-            let mn = kl(u64::from(!self.run.fixture.first) * LAM + i as u64 / 2, if n == 0 { 7 } else { 9 });
+            let mn = kl(
+                u64::from(!self.run.fixture.first) * LAM + i as u64 / 2,
+                if n == 0 { 7 } else { 9 },
+            );
             let two = Aff::constant(pw(mn + 1));
             for out in led_lines5(row, &pr, E::from_base(F(self.run.fixture.eps[n])), &two) {
                 f.lin(out);
@@ -1662,7 +1978,10 @@ impl LayerCheck<'_> {
         }
         for lm in 0..LAM_M {
             for e in 0..NE {
-                f.lin(Aff::slot(self.run.s_sel + (lm * NE + e) as u32) - self.sh_a("sel", "rt", lm, e));
+                f.lin(
+                    Aff::slot(self.run.s_sel + (lm * NE + e) as u32)
+                        - self.sh_a("sel", "rt", lm, e),
+                );
             }
         }
         f.lin(stack.hd.row.clone());
@@ -1690,7 +2009,13 @@ impl LayerCheck<'_> {
                     b.add(&self.long_a(offset, tu, layer, kh), weight);
                     #[cfg(feature = "std")]
                     if std::env::var_os("DUMP_SHARED").is_some() && layer == 0 && kh < 6 {
-                        eprintln!("RUST_LONG_A layer={} kh={} a_last={:016x} b_last={:016x}", layer, kh, a.e.last().map_or(0, |entry| entry.idx), b.e.last().map_or(0, |entry| entry.idx));
+                        eprintln!(
+                            "RUST_LONG_A layer={} kh={} a_last={:016x} b_last={:016x}",
+                            layer,
+                            kh,
+                            a.e.last().map_or(0, |entry| entry.idx),
+                            b.e.last().map_or(0, |entry| entry.idx)
+                        );
                     }
                 }
             }
@@ -1712,7 +2037,13 @@ impl LayerCheck<'_> {
                     b.add(&self.long_a(offset, tu, 2 * lm + 1, FE / S2 + kh), weight);
                     #[cfg(feature = "std")]
                     if std::env::var_os("DUMP_SHARED").is_some() && lm == 0 && kh < 6 {
-                        eprintln!("RUST_LONG_A2 lm={} kh={} a_last={:016x} b_last={:016x}", lm, kh, a.e.last().map_or(0, |entry| entry.idx), b.e.last().map_or(0, |entry| entry.idx));
+                        eprintln!(
+                            "RUST_LONG_A2 lm={} kh={} a_last={:016x} b_last={:016x}",
+                            lm,
+                            kh,
+                            a.e.last().map_or(0, |entry| entry.idx),
+                            b.e.last().map_or(0, |entry| entry.idx)
+                        );
                     }
                 }
             }
@@ -1727,7 +2058,10 @@ impl LayerCheck<'_> {
             f.lin(a);
         }
         {
-            let t_b = [self.run.tables.at("b-bits-0").unwrap(), self.run.tables.at("b-bits-1").unwrap()];
+            let t_b = [
+                self.run.tables.at("b-bits-0").unwrap(),
+                self.run.tables.at("b-bits-1").unwrap(),
+            ];
             let t_p = self.run.tables.at("b-pin").unwrap();
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() {
@@ -1741,7 +2075,10 @@ impl LayerCheck<'_> {
                 #[cfg(feature = "std")]
                 if std::env::var_os("DUMP_SHARED").is_some() {
                     for i in 0..8 {
-                        eprintln!("RUST_PLANE_LOW e={} i={} z={:016x}", e, i, self.run.forest.zb[e][i].0[0]);
+                        eprintln!(
+                            "RUST_PLANE_LOW e={} i={} z={:016x}",
+                            e, i, self.run.forest.zb[e][i].0[0]
+                        );
                     }
                 }
                 for c in 0..self.run.forest.calls.len() {
@@ -1754,11 +2091,15 @@ impl LayerCheck<'_> {
             if std::env::var_os("DUMP_SHARED").is_some() {
                 for e in 0..2 {
                     for i in 10..16 {
-                        eprintln!("RUST_PLANE_MID e={} i={} z={:016x}", e, i, self.run.forest.zb[e][i].0[0]);
+                        eprintln!(
+                            "RUST_PLANE_MID e={} i={} z={:016x}",
+                            e, i, self.run.forest.zb[e][i].0[0]
+                        );
                     }
                 }
             }
-            let padding = self.run.forest.empty_keys() + self.run.forest.pub_counts.iter().sum::<u64>();
+            let padding =
+                self.run.forest.empty_keys() + self.run.forest.pub_counts.iter().sum::<u64>();
             let mut pin = Aff::constant(-E::from_base(F((1u64 << self.run.forest.v()) - padding)));
             for column in 0..(self.run.forest.calls.len() << w) {
                 pin = pin + self.u3at(t_p, column as u64);
@@ -1781,7 +2122,10 @@ impl LayerCheck<'_> {
             f.lin(Aff::slot(self.run.forest.s_bit) - at[1].clone());
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() {
-                eprintln!("RUST_MARK plane_pin n={} constant={:016x}", f.n_claim, pin.c.0[0]);
+                eprintln!(
+                    "RUST_MARK plane_pin n={} constant={:016x}",
+                    f.n_claim, pin.c.0[0]
+                );
             }
             f.lin(pin);
         }
@@ -1805,7 +2149,10 @@ impl LayerCheck<'_> {
     ) -> Result<(), FpError> {
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            eprintln!("RUST_ALIN alin={:016x} blin={:016x}", stack.a_lin.c.0[0], stack.b_lin.c.0[0]);
+            eprintln!(
+                "RUST_ALIN alin={:016x} blin={:016x}",
+                stack.a_lin.c.0[0], stack.b_lin.c.0[0]
+            );
         }
         f.lin(stack.row_s.clone());
         f.lin(Aff::slot(stack.s_a0) - stack.a_lin.clone());
@@ -1829,11 +2176,23 @@ struct Run2 {
 
 impl LayerCheck<'_> {
     fn zz_tree(&self) -> u32 {
-        if self.head { 6 } else if self.run.fixture.first { 10 } else { 9 }
+        if self.head {
+            6
+        } else if self.run.fixture.first {
+            10
+        } else {
+            9
+        }
     }
 
     fn bz_tree(&self) -> u32 {
-        if self.head { 7 } else if self.run.fixture.first { 11 } else { 10 }
+        if self.head {
+            7
+        } else if self.run.fixture.first {
+            11
+        } else {
+            10
+        }
     }
 
     fn gt_tree(&self, matrix: usize) -> u32 {
@@ -1846,18 +2205,37 @@ impl LayerCheck<'_> {
         }
     }
 
-    pub fn init_trees(&self, f: &mut HFork) {
+    pub(crate) fn init_trees(&self, f: &mut HFork) {
         if !f.trees.is_empty() {
             return;
         }
-        f.trees.push(crate::fp::model::HTree::new("U3".into(), 'N', 1, self.run.fixture.n_u3, 1));
+        f.trees.push(crate::fp::model::HTree::new(
+            "U3".into(),
+            'N',
+            1,
+            self.run.fixture.n_u3,
+            1,
+        ));
         if self.head {
             for (index, name) in ["hf", "hd", "hr", "bH", "xbL"].iter().enumerate() {
                 let m = &self.run.fixture.mats[index];
-                f.trees.push(crate::fp::model::HTree::new((*name).into(), 'P', (m.m + 2) / 3, m.k, 1));
+                f.trees.push(crate::fp::model::HTree::new(
+                    (*name).into(),
+                    'P',
+                    (m.m + 2) / 3,
+                    m.k,
+                    1,
+                ));
             }
-            f.trees.push(crate::fp::model::HTree::new("ZZ".into(), 'N', 128, 2 * self.mz(), 4));
-            f.trees.push(crate::fp::model::HTree::new("BZ".into(), 'N', 32, 2048, 3));
+            f.trees.push(crate::fp::model::HTree::new(
+                "ZZ".into(),
+                'N',
+                128,
+                2 * self.mz(),
+                4,
+            ));
+            f.trees
+                .push(crate::fp::model::HTree::new("BZ".into(), 'N', 32, 2048, 3));
             return;
         }
         let names: &[&str] = if self.run.fixture.first {
@@ -1872,14 +2250,33 @@ impl LayerCheck<'_> {
                 [0, 1, 2, 3, 4, 5, 7, 6, 8][index]
             };
             let m = &self.run.fixture.mats[matrix];
-            f.trees.push(crate::fp::model::HTree::new((*name).into(), 'P', (m.m + 2) / 3, m.k, 1));
+            f.trees.push(crate::fp::model::HTree::new(
+                (*name).into(),
+                'P',
+                (m.m + 2) / 3,
+                m.k,
+                1,
+            ));
         }
-        f.trees.push(crate::fp::model::HTree::new("ZZ".into(), 'N', 128, 2 * self.mz(), 4));
-        f.trees.push(crate::fp::model::HTree::new("BZ".into(), 'N', 32, 2048, 3));
+        f.trees.push(crate::fp::model::HTree::new(
+            "ZZ".into(),
+            'N',
+            128,
+            2 * self.mz(),
+            4,
+        ));
+        f.trees
+            .push(crate::fp::model::HTree::new("BZ".into(), 'N', 32, 2048, 3));
         // array_of lists xbI after BZ for later layers (M8), not among the
         // named matrices.
         if !self.run.fixture.first {
-            f.trees.push(crate::fp::model::HTree::new("xbI".into(), 'P', (8192 + 2) / 3, 20, 1));
+            f.trees.push(crate::fp::model::HTree::new(
+                "xbI".into(),
+                'P',
+                (8192 + 2) / 3,
+                20,
+                1,
+            ));
         }
     }
 
@@ -1891,7 +2288,15 @@ impl LayerCheck<'_> {
                 let coefficient = weight * run.coef * run.weights[run.w0 + i];
                 let at = (run.first + i as u64) as usize;
                 if at >= f.trees[run.tree as usize].rows[run.row as usize].l.len() {
-                    panic!("bad run tree={} row={} first={} count={} index={} columns={}", run.tree, run.row, run.first, run.count, at, f.trees[run.tree as usize].rows[run.row as usize].l.len());
+                    panic!(
+                        "bad run tree={} row={} first={} count={} index={} columns={}",
+                        run.tree,
+                        run.row,
+                        run.first,
+                        run.count,
+                        at,
+                        f.trees[run.tree as usize].rows[run.row as usize].l.len()
+                    );
                 }
                 f.trees[run.tree as usize].rows[run.row as usize].l[at] += coefficient;
             }
@@ -1959,7 +2364,8 @@ impl LayerCheck<'_> {
         let w0 = eq_top(&forest.zb[0][5..]);
         let w1 = eq_top(&forest.zb[1][5..]);
         let bit_factor = forest.leaves.eps * forest.leaves_a;
-        let row = crate::fp::model::psc_row(f, &mut forest.leaves, E::ONE, &Aff::default()).unwrap();
+        let row =
+            crate::fp::model::psc_row(f, &mut forest.leaves, E::ONE, &Aff::default()).unwrap();
         self.t2lin(
             f,
             row,
@@ -1987,10 +2393,14 @@ impl LayerCheck<'_> {
             }],
         );
         let padding = forest.empty_keys() + forest.pub_counts.iter().sum::<u64>();
-        let w: Vec<E> = (0..kb).map(|u| E::from_base(crate::fp::field::FieldElement(1u64 << (u & 31)))).collect();
+        let w: Vec<E> = (0..kb)
+            .map(|u| E::from_base(crate::fp::field::FieldElement(1u64 << (u & 31))))
+            .collect();
         self.t2lin(
             f,
-            Aff::constant(-E::from_base(crate::fp::field::FieldElement((1u64 << forest.v()) - padding))),
+            Aff::constant(-E::from_base(crate::fp::field::FieldElement(
+                (1u64 << forest.v()) - padding,
+            ))),
             &[Run2 {
                 tree: self.bz_tree(),
                 row: 2,
@@ -2003,8 +2413,17 @@ impl LayerCheck<'_> {
         );
     }
 
-    pub fn pending(&self, shape: &crate::fp::key_public::LinShape, merged: &WeightMerge) -> Result<crate::fp::wf::TensorRow, FpError> {
-        crate::fp::weights::pending_row(&crate::fp::weights::ws_lay(), merged, merged.rec.len(), shape)
+    pub fn pending(
+        &self,
+        shape: &crate::fp::key_public::LinShape,
+        merged: &WeightMerge,
+    ) -> Result<crate::fp::wf::TensorRow, FpError> {
+        crate::fp::weights::pending_row(
+            &crate::fp::weights::ws_lay(),
+            merged,
+            merged.rec.len(),
+            shape,
+        )
     }
 
     pub fn smallness(
@@ -2018,7 +2437,12 @@ impl LayerCheck<'_> {
         self.init_trees(f);
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            eprintln!("RUST_SMALLNESS_DIGITS n={} rows={} first={:016x}", f.n_claim, digits.rows.len(), digits.rows.first().map(|r| r.c.0[0]).unwrap_or_default());
+            eprintln!(
+                "RUST_SMALLNESS_DIGITS n={} rows={} first={:016x}",
+                f.n_claim,
+                digits.rows.len(),
+                digits.rows.first().map(|r| r.c.0[0]).unwrap_or_default()
+            );
         }
         for row in &digits.rows {
             f.lin(row.clone());
@@ -2052,11 +2476,17 @@ impl LayerCheck<'_> {
             row_x.push(row);
             lo_x.push(vec![E::ONE]);
         }
-        let cf_first: Vec<u64> = self.run.fixture.mats.iter().scan(0, |at, m| {
-            let out = *at;
-            *at += m.k;
-            Some(out)
-        }).collect();
+        let cf_first: Vec<u64> = self
+            .run
+            .fixture
+            .mats
+            .iter()
+            .scan(0, |at, m| {
+                let out = *at;
+                *at += m.k;
+                Some(out)
+            })
+            .collect();
         let mut gam_x = Vec::new();
         let mut gam_v = Vec::new();
         for (mu, m) in self.run.fixture.mats.iter().enumerate() {
@@ -2076,7 +2506,10 @@ impl LayerCheck<'_> {
             gam_v.push(gv.clone());
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() {
-                eprintln!("RUST_GAM mu={} k={} first={} gx0={:016x} gv0={:016x}", mu, m.k, cf_first[mu], gx[0].0[0], gv[0].0[0]);
+                eprintln!(
+                    "RUST_GAM mu={} k={} first={} gx0={:016x} gv0={:016x}",
+                    mu, m.k, cf_first[mu], gx[0].0[0], gv[0].0[0]
+                );
             }
         }
         let sx = vp.iter().fold(E::ZERO, |a, &b| a + b);
@@ -2094,7 +2527,10 @@ impl LayerCheck<'_> {
             let wr = crate::fp::smallness::tie_right(&s, &lo_x[mu], &gam_x[mu]);
             #[cfg(feature = "std")]
             if std::env::var_os("DUMP_SHARED").is_some() {
-                eprintln!("RUST_TIE_LEFT mu={} m={} ms={} wl1={:016x} wl2={:016x}", mu, m.m, s.ms, wl[1].0[0], wl[2].0[0]);
+                eprintln!(
+                    "RUST_TIE_LEFT mu={} m={} ms={} wl1={:016x} wl2={:016x}",
+                    mu, m.m, s.ms, wl[1].0[0], wl[2].0[0]
+                );
             }
             let lead = self.lead(f, eq_first[mu]);
             let sw = wl.iter().fold(E::ZERO, |a, &b| a + b);
@@ -2141,7 +2577,11 @@ impl LayerCheck<'_> {
         for (mu, m) in self.run.fixture.mats.iter().enumerate() {
             let gc = &gam_v[mu];
             for fun in &self.run.tables.fun {
-                if fun.matrix != mu || fun.l == 0 || m.m % fun.l != 0 || fun.phi.len() != fun.l as usize {
+                if fun.matrix != mu
+                    || fun.l == 0
+                    || m.m % fun.l != 0
+                    || fun.phi.len() != fun.l as usize
+                {
                     continue;
                 }
                 let nsg = m.m / fun.l;
@@ -2151,7 +2591,10 @@ impl LayerCheck<'_> {
                     let mut form = Aff::constant(-lead * sphi * sv * pw(17));
                     for c in 0..m.k {
                         let at = fun.at + c * nsg + sg;
-                        if at as usize >= rd_t.len() || rd_t[at as usize] != 0 || gc[c as usize].is_zero() {
+                        if at as usize >= rd_t.len()
+                            || rd_t[at as usize] != 0
+                            || gc[c as usize].is_zero()
+                        {
                             return Err(FpError::Range {
                                 context: "smallness-read",
                             });
@@ -2183,6 +2626,11 @@ impl LayerCheck<'_> {
                             },
                         ],
                     );
+                    #[cfg(feature = "std")]
+                    if std::env::var_os("DUMP_READ").is_some() {
+                        let xor = fun.phi.iter().fold(0u64, |hash, value| hash ^ value.0[0]);
+                        eprintln!("RUST_READ mu={} at={} sg={} l={} lead={:016x} phi0={:016x} phixor={:016x}", mu, fun.at, sg, fun.l, lead.0[0], fun.phi[0].0[0], xor);
+                    }
                     self.reads_by_matrix[mu] += 1;
                     n_x4 += 1;
                 }
@@ -2208,13 +2656,15 @@ impl LayerCheck<'_> {
         f.trees[zz].rows[reads].coef = self.vt.clone();
         f.trees[zz].rows[reads].row_form = true;
         f.trees[zz].rows[reads].row_lo = vec![E::ONE; 7];
-        f.trees[zz].rows[reads].row_hi = (0..7).map(|i| {
-            let mut value = f.theta;
-            for _ in 0..i {
-                value *= value;
-            }
-            value
-        }).collect();
+        f.trees[zz].rows[reads].row_hi = (0..7)
+            .map(|i| {
+                let mut value = f.theta;
+                for _ in 0..i {
+                    value *= value;
+                }
+                value
+            })
+            .collect();
         f.trees[zz].rows[ties].coef = self.vp.clone();
         f.trees[zz].rows[ties].row_form = true;
         f.trees[zz].rows[ties].row_lo = f.trees[zz].rows[reads].row_lo.clone();
@@ -2240,14 +2690,17 @@ impl LayerCheck<'_> {
             let tree = tree as usize;
             f.trees[tree].rows[0].coef = self.row_x[mu].clone();
             f.trees[tree].rows[0].row_form = true;
-            f.trees[tree].rows[0].row_lo = vec![E::ONE; crate::fp::tensor::ceil_log2(f.trees[tree].r) as usize];
-            f.trees[tree].rows[0].row_hi = (0..crate::fp::tensor::ceil_log2(f.trees[tree].r)).map(|i| {
-                let mut value = self.lead(f, 128);
-                for _ in 0..i {
-                    value *= value;
-                }
-                value
-            }).collect();
+            f.trees[tree].rows[0].row_lo =
+                vec![E::ONE; crate::fp::tensor::ceil_log2(f.trees[tree].r) as usize];
+            f.trees[tree].rows[0].row_hi = (0..crate::fp::tensor::ceil_log2(f.trees[tree].r))
+                .map(|i| {
+                    let mut value = self.lead(f, 128);
+                    for _ in 0..i {
+                        value *= value;
+                    }
+                    value
+                })
+                .collect();
         }
     }
 
@@ -2280,12 +2733,19 @@ impl LayerCheck<'_> {
         }
         out.push((own, "ZZ".into()));
         out.push((own, "BZ".into()));
+        if !self.run.fixture.first {
+            out.push((own - 2, "M7".into()));
+        }
         // M8 (xbI) is claimed only in the first layer: its message has life 0,
         // so later layers use its table but have no claim for it.
         out
     }
 
-    fn row_weights(&self, tree: &crate::fp::model::HTree, row: &crate::fp::model::HRow) -> Result<crate::fp::req_rows::IndexWeights, FpError> {
+    fn row_weights(
+        &self,
+        tree: &crate::fp::model::HTree,
+        row: &crate::fp::model::HRow,
+    ) -> Result<crate::fp::req_rows::IndexWeights, FpError> {
         let bits = crate::fp::tensor::ceil_log2(tree.r);
         let np = row.row_point.len() as u32;
         let given = !row.row_lo.is_empty() || !row.row_hi.is_empty();
@@ -2293,7 +2753,10 @@ impl LayerCheck<'_> {
             || (row.row_ones || given) && (np != 0 || row.row_first != 0)
             || row.row_first & ((1u64 << np) - 1) != 0
             || row.row_first >= tree.r
-            || given && (row.row_ones || row.row_lo.len() != bits as usize || row.row_hi.len() != bits as usize)
+            || given
+                && (row.row_ones
+                    || row.row_lo.len() != bits as usize
+                    || row.row_hi.len() != bits as usize)
         {
             return Err(FpError::Range {
                 context: "row-form",
@@ -2338,7 +2801,12 @@ impl LayerCheck<'_> {
             for (row_index, row) in tree.rows.iter().enumerate() {
                 #[cfg(feature = "std")]
                 if std::env::var_os("DUMP_SHARED").is_some() && ti == 0 {
-                    eprintln!("RUST_DOOR_ROW_L row={} hash={:016x} first={:016x}", row_index, row.l.iter().fold(0u64, |a, x| a ^ x.0[0]), row.l.first().map_or(E::ZERO, |x| *x).0[0]);
+                    eprintln!(
+                        "RUST_DOOR_ROW_L row={} hash={:016x} first={:016x}",
+                        row_index,
+                        row.l.iter().fold(0u64, |a, x| a ^ x.0[0]),
+                        row.l.first().map_or(E::ZERO, |x| *x).0[0]
+                    );
                 }
                 if row.coef.len() != tree.r as usize || row.l.len() != tree.k as usize {
                     return Err(FpError::Range {

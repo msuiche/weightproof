@@ -26,7 +26,14 @@ pub struct Call {
 }
 
 impl Call {
-    fn new(name: &str, n: u32, k: u32, function: u32, t0: u64, tau: Option<Vec<u64>>) -> Self {
+    pub(crate) fn new(
+        name: &str,
+        n: u32,
+        k: u32,
+        function: u32,
+        t0: u64,
+        tau: Option<Vec<u64>>,
+    ) -> Self {
         Self {
             name: name.into(),
             n,
@@ -40,7 +47,10 @@ impl Call {
     }
 
     pub fn tau_at(&self, index: u64) -> E {
-        E::from_base(F(self.tau.as_ref().map_or(index, |tau| tau[index as usize])))
+        E::from_base(F(self
+            .tau
+            .as_ref()
+            .map_or(index, |tau| tau[index as usize])))
     }
 }
 
@@ -116,11 +126,11 @@ fn pow(mut value: E, mut exponent: u64) -> E {
     out
 }
 
-fn order_default(mu: u32) -> Vec<u32> {
+pub(crate) fn order_default(mu: u32) -> Vec<u32> {
     (0..mu).rev().collect()
 }
 
-fn order_forest_range(mu: u32, r_k: u32) -> Vec<u32> {
+pub(crate) fn order_forest_range(mu: u32, r_k: u32) -> Vec<u32> {
     let mut out = Vec::new();
     for v in [2, 1, 0, 5, 4, 3, 8, 7, 6] {
         out.push(r_k + v);
@@ -167,24 +177,45 @@ pub fn read_product_level(
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {
         let target_before = f.public_part(&start.clone())?;
-        eprintln!("RUST_PL_START slot={} public={:016x} slots={:?}", slot, target_before.0[0], start.s);
+        eprintln!(
+            "RUST_PL_START slot={} public={:016x} slots={:?}",
+            slot, target_before.0[0], start.s
+        );
     }
     let tau = tr.answer(RoundName::Line)?;
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {
-        eprintln!("RUST_PL_END slot={} s_l={} s_r={} l={:016x} r={:016x} tau={:016x}", slot, s_l, s_r, f.shown(s_l)?.0[0], f.shown(s_r)?.0[0], tau.0[0]);
+        eprintln!(
+            "RUST_PL_END slot={} s_l={} s_r={} l={:016x} r={:016x} tau={:016x}",
+            slot,
+            s_l,
+            s_r,
+            f.shown(s_l)?.0[0],
+            f.shown(s_r)?.0[0],
+            tau.0[0]
+        );
     }
-    let row = psc_row(
-        f,
-        &mut p,
-        f.shown(s_l)? * f.shown(s_r)?,
-        &Aff::default(),
-    )?;
+    let row = psc_row(f, &mut p, f.shown(s_l)? * f.shown(s_r)?, &Aff::default())?;
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() && (mu == 25 || mu == 18) {
-        eprintln!("RUST_LEVEL first={} mu={} start={:?}", p.first, mu, p.start.s.iter().map(|x| (x.0, x.1.0[0])).collect::<Vec<_>>());
+        eprintln!(
+            "RUST_LEVEL first={} mu={} start={:?}",
+            p.first,
+            mu,
+            p.start
+                .s
+                .iter()
+                .map(|x| (x.0, x.1 .0[0]))
+                .collect::<Vec<_>>()
+        );
     }
-    Ok(ProductLevel { r, s_l, s_r, tau, row })
+    Ok(ProductLevel {
+        r,
+        s_l,
+        s_r,
+        tau,
+        row,
+    })
 }
 
 pub fn hand_down(level: &ProductLevel, rho: &mut Vec<E>, start: &mut Aff) {
@@ -195,20 +226,31 @@ pub fn hand_down(level: &ProductLevel, rho: &mut Vec<E>, start: &mut Aff) {
         .plus(&Aff::slot(level.s_r).scaled(level.tau));
 }
 
-fn forest_shape(input: &ForestInput) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>, u32, u32, u32, u32, u32), FpError> {
+pub(crate) fn forest_shape(
+    input: &ForestInput,
+) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>, u32, u32, u32, u32, u32), FpError> {
     let calls = &input.calls;
     if calls.is_empty() || calls.len() > 16 {
-        return Err(FpError::Range { context: "forest-calls" });
+        return Err(FpError::Range {
+            context: "forest-calls",
+        });
     }
-    let d_t = calls.iter().map(|call| call.n).fold(input.lid, core::cmp::min);
+    let d_t = calls
+        .iter()
+        .map(|call| call.n)
+        .fold(input.lid, core::cmp::min);
     let k_t = calls.iter().map(|call| call.k).max().unwrap_or(0);
     if d_t < 10 {
-        return Err(FpError::Range { context: "forest-depth" });
+        return Err(FpError::Range {
+            context: "forest-depth",
+        });
     }
     let iota: Vec<u32> = calls.iter().map(|call| call.n - d_t).collect();
     let nt: u32 = iota.iter().map(|&bits| 1u32 << bits).sum();
     if nt > 256 {
-        return Err(FpError::Range { context: "forest-trees" });
+        return Err(FpError::Range {
+            context: "forest-trees",
+        });
     }
     let r_k = crate::fp::tensor::ceil_log2(nt as u64);
     let c_k = crate::fp::tensor::ceil_log2(calls.len() as u64);
@@ -227,7 +269,7 @@ fn forest_shape(input: &ForestInput) -> Result<(Vec<u32>, Vec<u32>, Vec<u32>, u3
     Ok((iota, first, call_of, d_t, k_t, nt, r_k, c_k))
 }
 
-fn forest_elems(v: u32, d: u32) -> u32 {
+pub(crate) fn forest_elems(v: u32, d: u32) -> u32 {
     let mut out = 7 + 30 * 6;
     for mu in 0..v {
         out += 5 + 2 * mu;
@@ -239,7 +281,12 @@ fn forest_elems(v: u32, d: u32) -> u32 {
     out + 14 + 2 * d
 }
 
-pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestInput) -> Result<Forest, FpError> {
+pub fn forest_pad(
+    f: &mut HFork,
+    tr: &mut Tr,
+    slot: &mut u32,
+    mut input: ForestInput,
+) -> Result<Forest, FpError> {
     let (iota, first, call_of, d_t, k_t, nt, r_k, c_k) = forest_shape(&input)?;
     let nc = input.calls.len();
     let v = d_t + r_k;
@@ -248,14 +295,18 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
     if input.pub_counts.len() != nt as usize
         || input.pub_counts.iter().any(|&count| count > 1u64 << d_t)
     {
-        return Err(FpError::Range { context: "forest-padding" });
+        return Err(FpError::Range {
+            context: "forest-padding",
+        });
     }
     for (call_index, call) in input.calls.iter().enumerate() {
         let padding: u64 = (0..1u32 << iota[call_index])
             .map(|b| input.pub_counts[(first[call_index] + b) as usize])
             .sum();
         if padding >> (d_t + iota[call_index]) != 0 {
-            return Err(FpError::Range { context: "forest-only-padding" });
+            return Err(FpError::Range {
+                context: "forest-only-padding",
+            });
         }
     }
     let theta = if nc > 1 {
@@ -275,7 +326,10 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
         eprintln!("RUST_FOREST_INIT empty={} nt={} call0={} pub0={} key0={:016x} a0={:016x} theta={:016x}", empty_keys, nt, call_of.first().copied().unwrap_or(0), input.pub_counts.first().copied().unwrap_or(0), pad_key(0, theta).0[0], a.0[0], theta.0[0]);
     }
     for y in 0..nt as usize {
-        a *= pow(alpha - pad_key(call_of[y] as usize, theta), input.pub_counts[y]);
+        a *= pow(
+            alpha - pad_key(call_of[y] as usize, theta),
+            input.pub_counts[y],
+        );
     }
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {
@@ -287,7 +341,11 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
     let mut s_z = 0;
     let mut s_p = 0;
     for j in 0..31 {
-        let start = if j == 0 { Aff::default() } else { Aff::slot(s_p) };
+        let start = if j == 0 {
+            Aff::default()
+        } else {
+            Aff::slot(s_p)
+        };
         let mut p = psc_begin(f, tr, slot, start)?;
         let at = psc_ends(f, tr, slot, &mut p, 3, if j == 0 { 3 } else { 2 })?;
         if j == 0 {
@@ -304,7 +362,13 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
         rows.push(psc_row(f, &mut p, s0, &Aff::default())?);
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() && j == 0 {
-            eprintln!("RUST_FOREST_TIE0 sz={:016x} power={:016x} s0={:016x} row={:016x}", f.shown(s_z)?.0[0], power.0[0], s0.0[0], rows.last().unwrap().c.0[0]);
+            eprintln!(
+                "RUST_FOREST_TIE0 sz={:016x} power={:016x} s0={:016x} row={:016x}",
+                f.shown(s_z)?.0[0],
+                power.0[0],
+                s0.0[0],
+                rows.last().unwrap().c.0[0]
+            );
         }
     }
     s_g[31] = s_p;
@@ -322,7 +386,17 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
     }
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {
-        eprintln!("RUST_SG 0={} val={:016x} 1={} val={:016x} 2={} val={:016x} 3={} val={:016x}", s_g[0], f.shown(s_g[0])?.0[0], s_g[1], f.shown(s_g[1])?.0[0], s_g[2], f.shown(s_g[2])?.0[0], s_g[3], f.shown(s_g[3])?.0[0]);
+        eprintln!(
+            "RUST_SG 0={} val={:016x} 1={} val={:016x} 2={} val={:016x} 3={} val={:016x}",
+            s_g[0],
+            f.shown(s_g[0])?.0[0],
+            s_g[1],
+            f.shown(s_g[1])?.0[0],
+            s_g[2],
+            f.shown(s_g[2])?.0[0],
+            s_g[3],
+            f.shown(s_g[3])?.0[0]
+        );
     }
     let mut rho = Vec::new();
     let mut start = Aff::slot(s_z);
@@ -341,7 +415,15 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
     let c_end = start;
     let mut table_start = ct;
     for l in 0..d {
-        let level = read_product_level(f, tr, slot, 5 + l, &rho_t, &mut table_start, &order_default(5 + l))?;
+        let level = read_product_level(
+            f,
+            tr,
+            slot,
+            5 + l,
+            &rho_t,
+            &mut table_start,
+            &order_default(5 + l),
+        )?;
         hand_down(&level, &mut rho_t, &mut table_start);
         rows.push(level.row);
     }
@@ -437,13 +519,22 @@ pub fn forest_pad(f: &mut HFork, tr: &mut Tr, slot: &mut u32, mut input: ForestI
         row += ec[c] * (t_t[of] + scale_index(theta, of as u64));
         #[cfg(feature = "std")]
         if std::env::var_os("DUMP_SHARED").is_some() {
-            eprintln!("RUST_FOREST_TERM c={} ec={:016x} tT={:016x} theta={:016x}", c, ec[c].0[0], t_t[of].0[0], scale_index(theta, of as u64).0[0]);
+            eprintln!(
+                "RUST_FOREST_TERM c={} ec={:016x} tT={:016x} theta={:016x}",
+                c,
+                ec[c].0[0],
+                t_t[of].0[0],
+                scale_index(theta, of as u64).0[0]
+            );
         }
     }
     let leaves_a = alpha - E::ONE - row;
     #[cfg(feature = "std")]
     if std::env::var_os("DUMP_SHARED").is_some() {
-        eprintln!("RUST_FOREST_ROW row={:016x} leaves_a={:016x}", row.0[0], leaves_a.0[0]);
+        eprintln!(
+            "RUST_FOREST_ROW row={:016x} leaves_a={:016x}",
+            row.0[0], leaves_a.0[0]
+        );
     }
     Ok(Forest {
         calls: input.calls,
@@ -500,12 +591,35 @@ pub(crate) fn accepted_forest(link: usize, digits: bool) -> ForestInput {
                 range("R16b", 20, 16),
                 range("R16c", 20, 16),
                 range("R8", 21, 8),
-                Call::new("FC", 20, 16, 1, 32768, Some(table(include_bytes!("../../spikes/plans/forest/g_fc.bin")))),
-                Call::new("FS", 20, 16, 1, 32768, Some(table(include_bytes!("../../spikes/plans/forest/g_fs.bin")))),
-                Call::new("FL", 20, 16, 1, 32768, Some(table(include_bytes!("../../spikes/plans/forest/g_fl.bin")))),
+                Call::new(
+                    "FC",
+                    20,
+                    16,
+                    1,
+                    32768,
+                    Some(table(include_bytes!("../../spikes/plans/forest/g_fc.bin"))),
+                ),
+                Call::new(
+                    "FS",
+                    20,
+                    16,
+                    1,
+                    32768,
+                    Some(table(include_bytes!("../../spikes/plans/forest/g_fs.bin"))),
+                ),
+                Call::new(
+                    "FL",
+                    20,
+                    16,
+                    1,
+                    32768,
+                    Some(table(include_bytes!("../../spikes/plans/forest/g_fl.bin"))),
+                ),
                 range("R16d", 20, 16),
             ],
-            pub_counts: vec![465408, 465408, 524288, 196608, 588288, 523776, 786304, 786432, 786432],
+            pub_counts: vec![
+                465408, 465408, 524288, 196608, 588288, 523776, 786304, 786432, 786432,
+            ],
             lid: 24,
         },
         (0 | 2, true) => ForestInput {
@@ -515,10 +629,31 @@ pub(crate) fn accepted_forest(link: usize, digits: bool) -> ForestInput {
         },
         (1 | 3, false) => ForestInput {
             calls: vec![
-                Call::new("KR", 20, 16, 2, 0, Some(table(include_bytes!("../../spikes/plans/forest/kr.bin")))),
-                Call::new("KFD", 20, 16, 1, 2307, Some(table(include_bytes!("../../spikes/plans/forest/kfd.bin")))),
+                Call::new(
+                    "KR",
+                    20,
+                    16,
+                    2,
+                    0,
+                    Some(table(include_bytes!("../../spikes/plans/forest/kr.bin"))),
+                ),
+                Call::new(
+                    "KFD",
+                    20,
+                    16,
+                    1,
+                    2307,
+                    Some(table(include_bytes!("../../spikes/plans/forest/kfd.bin"))),
+                ),
                 range("R16", 20, 16),
-                Call::new("WH", 20, 16, 2, 0, Some(table(include_bytes!("../../spikes/plans/forest/wh.bin")))),
+                Call::new(
+                    "WH",
+                    20,
+                    16,
+                    2,
+                    0,
+                    Some(table(include_bytes!("../../spikes/plans/forest/wh.bin"))),
+                ),
             ],
             pub_counts: vec![999424, 999424, 785408, 917504],
             lid: 24,
@@ -533,9 +668,30 @@ pub(crate) fn accepted_forest(link: usize, digits: bool) -> ForestInput {
                 range("R16a", 20, 16),
                 range("R16b", 20, 16),
                 range("R8", 20, 8),
-                Call::new("FEa", 20, 16, 1, 0, Some(table(include_bytes!("../../spikes/plans/forest/h_fea.bin")))),
-                Call::new("FEb", 20, 16, 1, 0, Some(table(include_bytes!("../../spikes/plans/forest/h_feb.bin")))),
-                Call::new("FC", 20, 16, 1, 32768, Some(table(include_bytes!("../../spikes/plans/forest/h_fc.bin")))),
+                Call::new(
+                    "FEa",
+                    20,
+                    16,
+                    1,
+                    0,
+                    Some(table(include_bytes!("../../spikes/plans/forest/h_fea.bin"))),
+                ),
+                Call::new(
+                    "FEb",
+                    20,
+                    16,
+                    1,
+                    0,
+                    Some(table(include_bytes!("../../spikes/plans/forest/h_feb.bin"))),
+                ),
+                Call::new(
+                    "FC",
+                    20,
+                    16,
+                    1,
+                    32768,
+                    Some(table(include_bytes!("../../spikes/plans/forest/h_fc.bin"))),
+                ),
             ],
             pub_counts: vec![950272, 1015808, 1008128, 1032192, 1032192, 1015808],
             lid: 24,

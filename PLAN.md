@@ -52,24 +52,127 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
 - worldfnd/whir: Rust WHIR implementation (academic prototype, NOT production
   reviewed). Candidate core primitive, gated by security + benchmark evaluation.
 
-## Current D11 increment (2026-11-05)
+## Current D11 increment (2026-11-09)
 
 - `fp::verify_link` executes the stored LINK transcript, checks canonical field
   encodings and proof-of-work, derives positions from the chain, verifies all
   five Merkle openings, and checks LINK's algebraic claims through BAT, FOLD,
   CS, and BASE against the C++ oracle's accepted leaf.
-- `fp::verify_key` executes the accepted key's one-time WF/ranges transcript
-  through BATT, FOLD, CS, and BASE, including extension-field opening strides,
-  all-main-then-mask leaf layout, and base-star columns. The key's LIN
-  member-first, seal/binding, shared-chain, and second-chain segments remain
-  pending; request-proof verification also remains pending.
+- `fp::request_frame` executes the accepted request proof through the lookup
+  forest, layer claims, output head, LIN second stage, and the request's own
+  test, consuming the exact stored transcript. Request fixes cover expert-width
+  row factors, embedding token/phi factors, signed RoPE coefficients, bounded
+  QK layout points, dense tensor cuts, and dense-variable rotation.
+- `fp::verify_key` executes the accepted key's complete transcript: the one-time
+  WF/ranges stage, shared LIN stage, and second request-own test, with exact
+  cursor exhaustion. Key plans, leaf domains, root-run aliases, opening
+  contexts, and work scopes are bound separately from the request's plans.
+- `fp::request_frame` executes the accepted request proof through the lookup
+  forest, layer claims, output head, LIN second stage, and the request's own
+  test, consuming the exact stored transcript. Request fixes cover expert-width
+  row factors, embedding token/phi factors, signed RoPE coefficients, bounded
+  QK layout points, dense tensor cuts, and dense-variable rotation.
 - `fp::field` provides allocation-free Goldilocks and cubic-extension
   arithmetic, checked against C++ differential vectors. `fp::tensor`,
   `fp::claims`, `fp::code_eval`, `fp::proximity`, and `fp::link_algebra`
   implement the verifier-only claim and proximity algebra.
-- Verification: 97 Rust tests pass, including accepted-key acceptance and three
-  transcript-corruption rejections; the `thumbv7em-none-eabi` no-std check
-  passes; all four fuzz targets completed 1,000 nightly runs without crashes.
+- Verification: all 107 Rust tests pass, including accepted-key and
+  accepted-request acceptance, key/request mutation rejection, dense tensor
+  regression tests, and key-transcript corruption rejection. The
+  `thumbv7em-none-eabi` no-std check passes. Earlier evidence: all four fuzz
+  targets completed 1,000 nightly runs without crashes.
+- CI: `.github/workflows/verifier.yml` fetches the FlashProve ground-truth
+  fixtures, runs the full Rust suite, and checks the no-std build on every push
+  and pull request.
+- Protocol: `spec/proof-lifecycle.md` defines proof-pending states, independent
+  commitment certification and renewal, format/parameter versioning, and
+  per-request extraction acceptance rules.
+- Extraction: `spec/extraction-review.md` stages field/tensor/Merkle extraction
+  before full verifier extraction and names the `dyn` interfaces to refactor.
+- M2: `spec/ptx-review.md` records the PTX-in-Lean reuse decision, its partial
+  correctness/UB/coverage limits, and the acceptance gate for integer kernels.
+  `spec/execution-environments.md` separates local CPU checks from `dgx1` CUDA
+  execution and records exact synchronization and verification commands.
+
+## M1 integer model (started 2026-11-09)
+
+- `spec/integer-model.md` fixes the exact dense forward-pass equations, table
+  generation, range domain, and evidence requirements for the CPU prover.
+- `fp::integer_model` implements floor division, `rq`, `clamp`, `low8`,
+  `argmax`, `isqrt`, and the norm without gains. `forward` evaluates the full
+  dense path with per-position K/V history and range checks. Public rotary,
+  softmax, SiLU, and sigmoid tables match Python reference values. Canonical
+  table serialization, byte regions, and mutation-sensitive public digests are
+  implemented. Weight commitments, residual execution traces, and a complete
+  `BlockStatement` bind one execution to its weights and output token. Rotary,
+  gate, epsilon, and signed-range behavior now follows the upstream model; all
+  four regenerated table digests match the accepted-proof policy exactly.
+  Balanced-limb Goldilocks encoding covers weights and residual streams. A
+  generated upstream Python dense-model vector matches the Rust intermediates,
+  residual stream, and output token; it exposed and regression-tested an
+  `isqrt` initial-guess bug. CPU prover rows encode embeddings, layer weights,
+  residuals, and all public lookup tables. `protocol_inputs` maps them to native
+  multilinear tensors and lookup forests. The upstream Lean comparator also
+  passes the dense case: 28 arrays and 1,143 values, with zero differences.
+  `LkpPublic` evaluates the encoded tables, and `BlockStatement` commits to all
+  canonical protocol rows with mutation rejection. Dimensions, scales, rotary
+  flags, and norm epsilons have a separate parameter commitment. `ProverTr`
+  emits canonical messages with verifier-identical Fiat–Shamir challenges.
+  `prove_psc_product` generates a complete product-relation proof that
+  `psc_verify` accepts; transcript mutation is rejected. Generic round-polynomial
+  proving covers a nonconstant linear relation, and the forest-shaped PSC
+  composition reproduces the product transcript exactly. Slot-aware prover PSC
+  rounds hide endpoints and build affine rows; all 31 initial forest sequences
+  execute with zero residual rows. Product-level polynomials, line-challenge
+  hand-down, final leaf rounds, and the terminal bit row are implemented. A
+  complete generated zero-table forest transcript verifies through `forest_pad`
+  with all 52 rows at zero residual. Nonzero SiLU tables also verify, and
+  `BlockProof` binds a 64-row forest to the block statement with mutation
+  rejection. All gate, attention, projection, rotary, norm, output-head, and
+  residual-addition proofs share one chain. Explicit SiLU/softmax keys and
+  values feed a combined 66-row forest; lookup-count, individual key/value, and
+  execution mutations fail closed, with verification restored afterward. The
+  upstream dense model verifies with output 48, 28,552 arithmetic proofs, 66
+  rows, and 8 SiLU plus 128 softmax reads. Two-layer and independent request
+  proofs verify, with four SiLU and twelve softmax reads and cross-request
+  rejection. `prove_block_batch` and `verify_block_batch` expose independent
+  requests; large counts split at 4,095 reads per tree. Two upstream eight-token
+  proofs verify with outputs 48 and 6, 683,360 arithmetic proofs each, 67 rows,
+  and cross-request rejection. Dot-product batching reduces each to 10,930
+  arithmetic proofs (62.5× fewer) with identical verification. Residual batching
+  leaves 10,675 arithmetic proofs per request; the two-request transcript is
+  67,685,664 bytes, dominated by extension-field endpoints. Compact base-field
+  endpoints reduce it to 23,967,008 bytes (2.82× smaller) with identical
+  verification. `format_version = 1` binds the encoding; bad versions, offsets,
+  truncation, and non-canonical values are rejected. Dot-product arithmetic now
+  emits quadratic multilinear rounds with epsilon scaling and zero-padded witness
+  tensors; `fold_low_pair_once` batches both witness vectors, and ICICLE-backed
+  proving is byte-identical to Rust. `formal/GpuFold.lean` proves the fused-fold
+  and quadratic-round equations with non-vacuity witnesses. It also proves
+  canonical Goldilocks extension folding, per-thread input bounds,
+  active/inactive behavior, and non-vacuity for the fixed CUDA launch. Exact
+  unsigned-word `add`, `sub`, 128-bit reduction, and multiplication are also
+  proved and connected to the canonical field operations. The `Ptx` model covers
+  the fixed kernel's emitted instruction subset: `ptxRunThread_eq_ssa` connects
+  it to independent arithmetic SSA, and `ptxRunThread_correct` proves
+  active/inactive instruction execution equal to `Launch.runThread`. Compiler
+  lowering, SASS, and the full PTX memory model remain outside the model; the
+  SF Tensor implementation is not publicly available.
+  `fp_compact_proof` completed
+  1,583 libFuzzer cases without a panic and is registered in CI with the other
+  parser targets. All five targets pass locally; `fp_layout` was restored in
+  `fuzz/Cargo.toml` and completed 2,778,910 cases. All 132 Rust tests pass, and
+  no-std passes. Native proving selects Rust below the measured 8,192-element
+  fold crossover and CUDA above it, reducing the larger block fixture to
+  8.68/8.80 ms with byte-identical proof encodings. Large dot-product witnesses
+  remain resident across rounds; each fold also computes the next round's
+  coefficients from the folded values, with an explicit Lean composition proof.
+  Generic fold chains reuse a per-thread series context, reducing a
+  thirteen-challenge 8,192-element chain from 208–241 us to 119–130 us.
+  Dot-product proofs also retain their stream and buffers across proofs,
+  reducing isolated create/upload/drop cycles from 183.8-246.1 us to
+  21.8-22.3 us. Large dense folds run on default Rust at every size; the
+  8,192-element regression test executes on both default and native backends.
 
 ## Decision register
 
@@ -114,7 +217,7 @@ Lane A (needs x86 H100 box)   Lane B (Lean)              Lane C (laptop)
                    │
                    ▼
         M1 dense GPT-2-class int8, CPU
-        M2 8B dense, GPU kernels (evaluate ICICLE before custom cudarc)
+        M2 8B dense, GPU kernels (ICICLE CPU + native NVCC CUDA)
         M3 MoE, work ∝ active experts, batched windows
         M4 ZK implementation, verifiable sampling (D5), chunked 128k context
 ```

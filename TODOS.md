@@ -6,6 +6,10 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
 
 ## 1. Protocol spec gaps: proof-pending, commitment renewal + identity, versioning
 
+- **Status:** Completed in `spec/proof-lifecycle.md` (2026-11-09): proof-pending
+  states, independent commitment certification and renewal, format/parameter
+  versioning, and per-request extraction acceptance rules.
+
 - **What:** Write spec sections for (a) proof-pending client semantics during
   post-hoc proving, (b) commitment certification + renewal flow (~16M requests),
   (c) proof-format + parameter versioning.
@@ -27,6 +31,10 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   the versioning skeleton.
 
 ## 2. hax / coq-of-rust extraction feasibility (Rocq track)
+
+- **Status:** Completed in `spec/extraction-review.md` (2026-11-09): staged
+  extraction plan, concrete `dyn` blockers, and acceptance evidence. No extraction
+  was run because hax/cargo-hax is not installed.
 
 - **What:** Evaluate extracting a Rocq model from the real Rust verifier to prove
   implementation correctness, vs. the hand-written Lean twin + CI agreement tests.
@@ -62,6 +70,10 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
 
 ## 4. Review SF Tensor's PTX-in-Lean formalization (potential reuse, M2+)
 
+- **Status:** Completed in `spec/ptx-review.md` (2026-11-09): reuse the memory
+  model and pipeline composition for M2, with explicit Goldilocks semantics,
+  progress/UB arguments, non-vacuity, and differential verification.
+
 - **What:** Review https://sf-tensor.com/engineering/formalizing-ptx and the
   paper https://sf-tensor.com/papers/formalizing-ptx.pdf for reuse in
   verifying our GPU prover kernels in Lean.
@@ -85,3 +97,61 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   could extend our "statements before code" rule to the GPU layer instead of
   relying on differential testing alone.
 - **Depends on:** nothing for the review; reuse decisions wait for M2 GPU work.
+
+## 5. M1 dense integer model and proof batch
+
+- **Status:** Completed (2026-11-09): exact dense model, statement binding,
+  prover/verifier transcript generation, arithmetic and lookup proofs, compact
+  encoding, independent request batches, and CI fuzz coverage.
+
+- **Evidence:** Python/Lean/Rust agreement on the dense case; upstream complete
+  proof with output 48; two eight-token batches with outputs 48 and 6; 132 Rust
+  tests; no-std build; all five fuzz targets passing locally, including 1,583
+  compact-proof cases and 2,778,910 layout cases.
+- **Next:** M2 GPU sumcheck/FRI kernels and larger model/window benchmarks.
+- **Baseline:** multilinear small-model release benchmarks: Rust 2.94 ms proving
+  and 3.11 ms verification; ICICLE CPU 9.02 ms and 6.26 ms after pairing witness
+  folds (down from 14.73 ms and 9.26 ms). Native CUDA with persistent per-thread
+  buffers/streams and operation-specific transfer paths: 5.82 ms proving and
+  5.73 ms verification on the GB10, down from 7.78 ms and 5.80 ms with copies
+  alone. The four-layer/f8/window-8 benchmark takes 4.59/4.86 ms locally and
+  21.98/17.20 ms on the GB10 over 30 samples;
+  it is not an 8B result because no 8B fixture or loader is present.
+  The backend uses Rust below 8,192 input elements and CUDA at and above it;
+  threshold selection reduces this larger fixture to 8.68/8.80 ms in interleaved
+  A/B runs, while preserving byte-identical proof encodings.
+  CI includes two-layer and two-request cases.
+- **M2 kernel lane:** ICICLE v4 selected; `fp::gpu::sumcheck_fold` and the
+  protocol-exact `sumcheck_fold_extension` pass CPU differential tests, including
+  cubic `X^3 = 2` reduction, and have an explicit CUDA acceptance test.
+  Fusion and host-side splitting reduced the 1,024-element ICICLE CPU fold from
+  22.26 ms to 340 us; plain Rust remains faster at this small size.
+  `DotProductRoundProver` now emits quadratic multilinear rounds and uses the
+  kernels under `icicle-prover`; non-power-of-two witnesses are zero-padded and
+  both witness vectors fold after every challenge. `Tensor::folded_dense` and
+  proximity `fold_low_once` use the same verified arithmetic. All 133
+  ICICLE-enabled tests pass, and Rust/ICICLE multilinear block proofs are
+  byte-identical.
+  `formal/GpuFold.lean` proves universal fused-fold and quadratic-dot-round
+  correctness plus non-vacuity without `sorry` or user axioms. A canonical
+  Goldilocks/cubic-extension model and the fixed CUDA launch now also have
+  universal per-thread correctness, input-bound, inactive-thread, and
+  non-vacuity proofs. Exact unsigned-word addition, subtraction, 128-bit
+  reduction, and multiplication are proved against canonical modular arithmetic
+  and connected to the field model. The `Ptx` instruction-subset model also
+  proves `ptxRunThread_eq_ssa` and `ptxRunThread_correct`, connecting the fixed
+  kernel's emitted arithmetic stream to independent SSA and canonical folding.
+  Compiler lowering, SASS, and full PTX memory semantics remain outside the
+  model; SF Tensor has not published its Lean model.
+  `native-cuda` builds the fixed NVCC kernel through a scoped FFI; all 139 tests
+  pass on the GB10 and native-CUDA proofs are byte-identical to Rust. PTX launch,
+  termination, UB, and synchronization evidence is recorded in
+  `spec/ptx-review.md`. Large dot-product witnesses stay resident across rounds;
+  each fold computes the next round's coefficients from the folded values.
+  Generic fold chains also reuse one per-thread context and alternate buffers.
+  Dot-product proofs reuse their stream and buffers across proofs too, reducing
+  isolated create/upload/drop cycles from 183.8-246.1 us to 21.8-22.3 us.
+  Default Rust executes large dense folds at every size, with the same
+  8,192-element regression test on both backends and 133 passing tests.
+  Next: import an available PTX model for compiler/hardware semantics and scale
+  benchmarks to the 8B serving model.

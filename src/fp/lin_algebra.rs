@@ -50,11 +50,17 @@ impl LinSharedAlgebra {
         let mut iopp = Iopp::new(base, mask);
         iopp.base_ids = base_ids;
         iopp.mask_ids = mask_ids;
-        let u = iopp.statement.sent(shape.fold.u.clone());
+        let u_code = iopp.base_ids[0] as u32;
+        let omega_code = iopp.base_ids[shape.test_u.len()] as u32;
+        let shared_mask_code = iopp.mask_ids[0] as u32;
+        let mut u_shape = shape.fold.u.clone();
+        u_shape.code = u_code;
+        u_shape.mask_code = shared_mask_code;
+        let u = iopp.statement.sent(u_shape);
         let fold_mask = if shape.masks_ahead {
             Some(iopp.statement.sent(OracleShape {
                 code: 0,
-                mask_code: shape.test_u[0].mask_code,
+                mask_code: shared_mask_code,
                 main_rows: 0,
                 mask_rows: 1u64 << shape.test_u[0].h,
                 main_deg: 3,
@@ -63,14 +69,19 @@ impl LinSharedAlgebra {
         } else {
             None
         };
-        let omega = iopp.statement.sent(shape.omega.clone());
+        let mut omega_shape = shape.omega.clone();
+        omega_shape.code = omega_code;
+        omega_shape.mask_code = shared_mask_code;
+        let omega = iopp.statement.sent(omega_shape);
         let split = if shape.fold.u.code != shape.omega.code {
-            Some(iopp.statement.sent(shape.shared_split.clone()))
+            let mut split_shape = shape.shared_split.clone();
+            split_shape.mask_code = shared_mask_code;
+            Some(iopp.statement.sent(split_shape))
         } else {
             None
         };
-        let group_u = iopp.statement.new_group(shape.fold.u.code, shape.shared_mask_code);
-        let group_omega = iopp.statement.new_group(shape.omega.code, shape.shared_mask_code);
+        let group_u = iopp.statement.new_group(u_code, shared_mask_code);
+        let group_omega = iopp.statement.new_group(omega_code, shared_mask_code);
         iopp.statement.join(group_u, u);
         iopp.statement.join(group_omega, omega);
         if let Some(split) = split {
@@ -83,7 +94,7 @@ impl LinSharedAlgebra {
                 oracle: u,
                 lay: VectorLay {
                     row_bits: ceil_log2(shape.fold.u.main_rows),
-                    place_bits: log_ell(&iopp.statement.base[shape.fold.u.code as usize]),
+                    place_bits: log_ell(&iopp.statement.base[u_code as usize]),
                     rows_high: shape.fold.rows_high,
                 },
             },
