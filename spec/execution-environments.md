@@ -56,7 +56,7 @@ Local:
 cargo test --locked
 cargo test --locked --features icicle-prover
 cargo check --locked --no-default-features --target thumbv7em-none-eabi
-~/.elan/toolchains/leanprover--lean4---v4.34.1/bin/lean formal/GpuFold.lean
+~/.elan/toolchains/leanprover--lean4---v4.34.1/bin/lean -s 1048576 formal/GpuFold.lean
 ```
 
 On `dgx1`:
@@ -217,7 +217,11 @@ not presented as 8B results.
 ## Formal and PTX evidence
 
 `formal/GpuFold.lean` proves the fused cubic-extension fold and multilinear
-quadratic-round identities without `sorry` or user-added axioms.
-`spec/ptx-review.md` records the fixed kernel's launch bounds, termination,
-UB-freedom guards, and stream synchronization evidence. It also distinguishes
-that reviewed evidence from a future mechanized proof in SF Tensor's PTX model.
+quadratic-round identities without `sorry` or user-added axioms. Its `Ptx`
+model covers the fixed kernel's emitted instruction subset;
+`ptxRunThread_correct` proves active and inactive PTX threads equal
+`Launch.runThread`, and `ptxRunThread_eq_ssa` connects the instruction stream to
+the independently written arithmetic SSA. This does not model compiler
+lowering, SASS, or the full PTX memory model. `spec/ptx-review.md` records the
+fixed kernel's launch bounds, termination, UB-freedom guards, and stream
+synchronization evidence.

@@ -152,9 +152,12 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
   canonical Goldilocks extension folding, per-thread input bounds,
   active/inactive behavior, and non-vacuity for the fixed CUDA launch. Exact
   unsigned-word `add`, `sub`, 128-bit reduction, and multiplication are also
-  proved and connected to the canonical field operations. This is a source-level
-  field/index/machine-word model, not a PTX proof; the SF Tensor implementation
-  is not publicly available.
+  proved and connected to the canonical field operations. The `Ptx` model covers
+  the fixed kernel's emitted instruction subset: `ptxRunThread_eq_ssa` connects
+  it to independent arithmetic SSA, and `ptxRunThread_correct` proves
+  active/inactive instruction execution equal to `Launch.runThread`. Compiler
+  lowering, SASS, and the full PTX memory model remain outside the model; the
+  SF Tensor implementation is not publicly available.
   `fp_compact_proof` completed
   1,583 libFuzzer cases without a panic and is registered in CI with the other
   parser targets. All five targets pass locally; `fp_layout` was restored in

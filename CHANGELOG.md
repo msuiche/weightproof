@@ -9,6 +9,7 @@
 - Run protocol-exact Goldilocks and cubic-extension folds through ICICLE CPU or a native NVCC CUDA backend, with Lean correctness and non-vacuity proofs.
 - Prove canonical Goldilocks extension folding and fixed CUDA launch/index safety in Lean, including active/inactive thread behavior and a concrete non-vacuity witness.
 - Prove the CUDA unsigned-word `add`, `sub`, 128-bit `reduce128`, and `mul` implementations against canonical modular arithmetic, with field-level correctness wrappers.
+- Model the fixed kernel's emitted PTX instruction subset in Lean and prove `ptxRunThread_correct` and `ptxRunThread_eq_ssa`, connecting active/inactive instruction execution to the independent SSA and canonical fold.
 - Keep large dot-product witnesses resident across CUDA rounds, computing the next round's coefficients from folded values in the same launch; reduce an 8,192-pair proof from 2.24 ms to 2.08 ms with byte-identical proofs.
 - Reuse a per-thread resident context for generic fold chains and large dense tensors, reducing a thirteen-challenge 8,192-element chain from 208–241 us to 119–130 us.
 - Reuse dot-product streams and buffers across proofs, reducing isolated create/upload/drop cycles from 183.8-246.1 us to 21.8-22.3 us.

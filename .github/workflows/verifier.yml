@@ -70,8 +70,8 @@ jobs:
           test: false
           lint: false
           use-mathlib-cache: false
-      - name: Check CUDA field, word, launch, and fold proofs
-        run: lean formal/GpuFold.lean
+      - name: Check CUDA field, PTX, launch, and fold proofs
+        run: lean -s 1048576 formal/GpuFold.lean
 
   fuzz:
     runs-on: ubuntu-latest

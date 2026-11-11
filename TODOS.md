@@ -138,9 +138,11 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   universal per-thread correctness, input-bound, inactive-thread, and
   non-vacuity proofs. Exact unsigned-word addition, subtraction, 128-bit
   reduction, and multiplication are proved against canonical modular arithmetic
-  and connected to the field model. This closes the source-level field/index and
-  machine-word arithmetic gaps, not PTX semantics; SF Tensor has not published
-  its Lean model.
+  and connected to the field model. The `Ptx` instruction-subset model also
+  proves `ptxRunThread_eq_ssa` and `ptxRunThread_correct`, connecting the fixed
+  kernel's emitted arithmetic stream to independent SSA and canonical folding.
+  Compiler lowering, SASS, and full PTX memory semantics remain outside the
+  model; SF Tensor has not published its Lean model.
   `native-cuda` builds the fixed NVCC kernel through a scoped FFI; all 139 tests
   pass on the GB10 and native-CUDA proofs are byte-identical to Rust. PTX launch,
   termination, UB, and synchronization evidence is recorded in

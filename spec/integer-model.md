@@ -313,8 +313,11 @@ an independent reference fold, the multilinear dot-product quadratic coefficient
 identity, and non-vacuity witnesses. It also proves canonical Goldilocks field
 operations, exact unsigned-word addition, subtraction, 128-bit reduction, and
 multiplication, plus fixed-launch index bounds and active/inactive behavior.
-These proofs have no `sorry` or user-added axioms. CI checks this file with Lean
-4.34.1. PTX/compiler/hardware semantics remain outside the model.
+The `Ptx` instruction-subset model also proves `ptxRunThread_correct` and
+`ptxRunThread_eq_ssa`, connecting the emitted arithmetic stream to the
+independent SSA and canonical fold. These proofs have no `sorry` or user-added
+axioms. CI checks this file with Lean 4.34.1. Compiler lowering, SASS, and the
+full PTX memory model remain outside the model.
 
 On `dgx1` (aarch64 Ubuntu 24.04, NVIDIA GB10, NVCC 13.0), all **139** tests pass
 with `native-cuda`, including real multilinear block proving and accepted/mutated

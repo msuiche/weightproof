@@ -131,11 +131,15 @@ the unsigned wrapping operations and proves `add_correct`, `sub_correct`,
 `reduce128_correct`, and `mul_correct` against canonical modular arithmetic;
 `Field.word_add_correct`, `Field.word_sub_correct`, and `Field.word_mul_correct`
 connect those results directly to the field operations used by the fold proof.
-Lean reports no `sorryAx` or user-added axioms for these theorems. This is a
-self-contained source-level field/index/machine-word model, not a PTX
-memory-model proof: SF Tensor has published its paper but not its Lean
-implementation, so no direct reuse is claimed. Compiler lowering and hardware
-remain covered by the reviewed guards and differential evidence above.
-Mechanizing those layers requires an available PTX model. Scaling to the 8B
+The `Ptx` model covers the fixed kernel's emitted instruction subset:
+`ptxRunThread_eq_ssa` proves the instruction stream equal to an independent
+arithmetic SSA, and `ptxRunThread_correct` proves active and inactive PTX
+threads equal `Launch.runThread` and therefore the canonical fold. Lean reports
+no `sorryAx` or user-added axioms for these theorems. This is a self-contained
+source-level field/index/machine-word and instruction-subset model, not a full
+PTX memory-model proof: SF Tensor has published its paper but not its Lean
+implementation, so no direct reuse is claimed. Compiler lowering, SASS, and
+hardware remain covered by the reviewed guards and differential evidence above.
+Mechanizing those layers requires an available full PTX model. Scaling to the 8B
 serving model and eliminating per-fold allocation/copies are separate
 performance work, not correctness assumptions.
