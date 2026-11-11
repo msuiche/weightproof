@@ -256,7 +256,10 @@ pub fn plan_key(input: &KeyLayoutInput) -> Result<FilePlan, FpError> {
     )
 }
 
-#[cfg(test)]
+pub fn accepted_input() -> KeyLayoutInput {
+    tests::accepted_input()
+}
+
 mod tests {
     use super::*;
     use crate::fp::{analysis::GroupSize, codes::CodeSize};
@@ -297,7 +300,7 @@ mod tests {
         TreeSize::new(name, log_n, leaf_bytes)
     }
 
-    pub(crate) fn accepted_input() -> KeyLayoutInput {
+    pub fn accepted_input() -> KeyLayoutInput {
         let folded_stages = vec![
             stage(5, 0, (17, 32768, 97, true), (13, 64, 146, true), 483, 97),
             stage(4, 2, (14, 2048, 66, true), (12, 256, 66, true), 600, 66),
@@ -486,6 +489,3 @@ mod tests {
         ));
     }
 }
-
-#[cfg(test)]
-pub(crate) use tests::accepted_input;

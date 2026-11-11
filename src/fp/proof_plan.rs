@@ -249,7 +249,10 @@ pub fn plan_proof(input: &ProofLayoutInput) -> Result<FilePlan, FpError> {
     )
 }
 
-#[cfg(test)]
+pub fn accepted_input() -> ProofLayoutInput {
+    tests::accepted_input()
+}
+
 pub(crate) mod tests {
     use super::*;
     use crate::fp::{
@@ -401,7 +404,7 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) fn accepted_input() -> ProofLayoutInput {
+    pub fn accepted_input() -> ProofLayoutInput {
         let g_lookup = LookupSize::new(19, 5, 0, vec![24]);
         let a_lookup = LookupSize::new(18, 5, 0, vec![22]);
         let h_lookup = LookupSize::new(19, 5, 0, vec![23]);

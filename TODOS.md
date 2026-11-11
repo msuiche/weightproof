@@ -56,6 +56,9 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
 
 ## 3. Verifier distribution + CI
 
+- **Status:** Completed: `weightproof` CLI with 0/1/2 exit codes, key/request
+  integration tests, and GitHub Releases for Linux/macOS on amd64/arm64.
+
 - **What:** Build/publish pipeline for the verifier CLI — GitHub Releases
   (linux/darwin × amd64/arm64), cargo install — plus CI jobs for the no_std check
   (D6), fuzz targets (D8), criterion benches (D9).
@@ -129,7 +132,7 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   `DotProductRoundProver` now emits quadratic multilinear rounds and uses the
   kernels under `icicle-prover`; non-power-of-two witnesses are zero-padded and
   both witness vectors fold after every challenge. `Tensor::folded_dense` and
-  proximity `fold_low_once` use the same verified arithmetic. All 133
+  proximity `fold_low_once` use the same verified arithmetic. All 137
   ICICLE-enabled tests pass, and Rust/ICICLE multilinear block proofs are
   byte-identical.
   `formal/GpuFold.lean` proves universal fused-fold and quadratic-dot-round
@@ -143,7 +146,7 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   kernel's emitted arithmetic stream to independent SSA and canonical folding.
   Compiler lowering, SASS, and full PTX memory semantics remain outside the
   model; SF Tensor has not published its Lean model.
-  `native-cuda` builds the fixed NVCC kernel through a scoped FFI; all 139 tests
+  `native-cuda` builds the fixed NVCC kernel through a scoped FFI; all 142 tests
   pass on the GB10 and native-CUDA proofs are byte-identical to Rust. PTX launch,
   termination, UB, and synchronization evidence is recorded in
   `spec/ptx-review.md`. Large dot-product witnesses stay resident across rounds;
@@ -152,6 +155,6 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   Dot-product proofs reuse their stream and buffers across proofs too, reducing
   isolated create/upload/drop cycles from 183.8-246.1 us to 21.8-22.3 us.
   Default Rust executes large dense folds at every size, with the same
-  8,192-element regression test on both backends and 133 passing tests.
+  8,192-element regression test on both backends and 136 passing tests.
   Next: import an available PTX model for compiler/hardware semantics and scale
   benchmarks to the 8B serving model.

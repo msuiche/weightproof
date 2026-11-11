@@ -59,6 +59,34 @@ cargo check --locked --no-default-features --target thumbv7em-none-eabi
 ~/.elan/toolchains/leanprover--lean4---v4.34.1/bin/lean -s 1048576 formal/GpuFold.lean
 ```
 
+## Verifier CLI and releases
+
+Build the CLI with `cargo build --release --bin weightproof`. It returns 0 for
+`verified`, 1 for `rejected` with a named cause, and 2 for usage errors.
+
+```bash
+weightproof verify-key \
+  --policy spikes/flashprove/examples/accepted-proof/config/policy.txt \
+  --layout spikes/flashprove/examples/accepted-proof/config/layout.txt \
+  --kl spikes/flashprove/examples/accepted-proof/config/KL.bin \
+  --key spikes/flashprove/examples/accepted-proof/ivk/key.bin
+
+weightproof verify-request \
+  --policy spikes/flashprove/examples/accepted-proof/config/policy.txt \
+  --layout spikes/flashprove/examples/accepted-proof/config/layout.txt \
+  --kl spikes/flashprove/examples/accepted-proof/config/KL.bin \
+  --leaf spikes/flashprove/examples/accepted-proof/ivk/leaf/0.bin \
+  --statement spikes/plans/request-statement.bin \
+  --request spikes/flashprove/examples/accepted-proof/example.req \
+  --first-plan spikes/plans/request-first-plan.bin \
+  --proof spikes/flashprove/examples/accepted-proof/example.proof
+```
+
+`tests/cli.rs` covers usage errors, accepted key/request verification, and a
+mutated request proof. `.github/workflows/release.yml` builds and publishes the
+binary plus SHA-256 checksum on GitHub Releases for `x86_64` and `aarch64` Linux
+and macOS. `cargo install --path .` installs the same CLI locally.
+
 On `dgx1`:
 
 ```bash
@@ -172,7 +200,8 @@ Three interleaved A/B runs for a complete 8,192-pair PSC proof gave baseline
 2.24/1.74/2.25 ms and resident 2.09/1.66/2.08 ms (baseline/resident ranges
 1.74–2.25 ms and 1.66–2.09 ms). The large proof bytes are identical with SHA-256
 `820fc388ddd948216ea3c99e2f0d127f139407240cab6d40d35b255027bd7922`.
-All 139 native tests pass: 132 unit tests and 7 ground-truth integration tests.
+All 142 native tests pass: 132 unit tests, 3 CLI tests, and 7 ground-truth
+integration tests.
 
 ### Generic resident fold chains
 
@@ -180,10 +209,10 @@ All 139 native tests pass: 132 unit tests and 7 ground-truth integration tests.
 `SeriesContext`, including its stream and alternate buffers. No stream or buffer
 is allocated per chain. Thirteen challenges on an 8,192-element chain took
 208–241 us before residency and 119–130 us after, with identical outputs.
-The complete suite now has 139 tests: 132 unit tests and 7 ground-truth
-integration tests. Non-native builds run the same large dense-fold loop at
-every size; skipping it caused `base-linear-claim` failures. The 8,192-element
-regression test now runs on both backends, and the default suite has 133
+The complete suite now has 142 tests: 132 unit tests, 3 CLI tests, and 7
+ground-truth integration tests. Non-native builds run the same large dense-fold
+loop at every size; skipping it caused `base-linear-claim` failures. The 8,192-element
+regression test now runs on both backends, and the default suite has 136
 passing tests.
 
 ### Cross-proof dot-context residency

@@ -579,13 +579,12 @@ impl<'a, 'b> RequestFrame<'a, 'b> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+use super::*;
     use crate::fp::{
         heads::{configuration_digest, parse_leaf_record},
         link_public::IndexName,
-        proof_plan::{plan_proof, tests::accepted_input},
+        proof_plan::{accepted_input, plan_proof},
+        digest::Digest,
         request_public::{accepted_request_fixed, RequestPublic},
     };
 
@@ -670,32 +669,23 @@ mod tests {
         }
     }
 
-    fn verify_accepted_request(proof: &[u8]) {
-        let policy =
-            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
-        let layout =
-            include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
-        let kl = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/KL.bin");
-        let leaf = include_bytes!("../../spikes/flashprove/examples/accepted-proof/ivk/leaf/0.bin");
-        let configuration = configuration_digest(&[policy, layout, kl]);
-        let (root, record, _) = parse_leaf_record(leaf, 256).unwrap();
-        let table = IndexName::new(&root, &configuration, record);
-        let public = RequestPublic::new(
-            &accepted_request_fixed(configuration, layout),
-            &table,
-            0,
-            include_bytes!("../../spikes/plans/request-statement.bin"),
-            include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.req"),
-            include_bytes!("../../spikes/plans/request-first-plan.bin"),
-        );
-        let input = accepted_input();
-        let request = crate::fp::request::RequestFile::parse(include_bytes!(
-            "../../spikes/flashprove/examples/accepted-proof/example.req"
-        ))
-        .unwrap();
+    fn verify_request_transcript_inner(
+        input: &ProofLayoutInput,
+        configuration: &Digest,
+        layout: &[u8],
+        table: &IndexName,
+        statement: &[u8],
+        request_bytes: &[u8],
+        first_plan: &[u8],
+        proof: &[u8],
+    ) {
+        let fixed = accepted_request_fixed(*configuration, layout);
+        let public = RequestPublic::new(&fixed, table, 0, statement, request_bytes, first_plan);
+        let input = input.clone();
+        let request = crate::fp::request::RequestFile::parse(request_bytes).unwrap();
         let plan = plan_proof(&input).unwrap();
         let file_layout = plan.layout().unwrap();
-        let mut cursor = Cursor::new(proof, &file_layout, &configuration, &table.commitment);
+        let mut cursor = Cursor::new(proof, &file_layout, configuration, &table.commitment);
         cursor.take("head", "").unwrap();
         let salt = crate::fp::digest::Digest::from_le_bytes(
             cursor
@@ -707,13 +697,7 @@ mod tests {
         let query = public.first_query(&salt);
         let run = query.run.unwrap();
         let mut chain = Chain::new(query);
-        let mut frame = RequestFrame::new(
-            &mut cursor,
-            &mut chain,
-            accepted_request_fixed(configuration, layout),
-            input.clone(),
-            run,
-        );
+        let mut frame = RequestFrame::new(&mut cursor, &mut chain, fixed.clone(), input.clone(), run);
         frame.first().unwrap();
         let mut fork = crate::fp::model::HFork::default();
         fork.slots(3204);
@@ -780,7 +764,7 @@ mod tests {
                 .unwrap();
         assert_eq!(merged.rho.len(), 33);
         let pending_g0 = crate::fp::layer_checks::LayerCheck::new(&mut run)
-            .pending(&accepted_request_fixed(configuration, layout).lin, &merged)
+            .pending(&fixed.lin, &merged)
             .unwrap();
         let mut pending_g0 = pending_g0;
         pending_g0.masks.push(crate::fp::mask::MaskTerm {
@@ -940,7 +924,7 @@ mod tests {
                 .unwrap();
         assert_eq!(merged.rho.len(), 32);
         let pending_g1 = crate::fp::layer_checks::LayerCheck::new(&mut run)
-            .pending(&accepted_request_fixed(configuration, layout).lin, &merged)
+            .pending(&fixed.lin, &merged)
             .unwrap();
         let mut pending_g1 = pending_g1;
         pending_g1.masks.push(crate::fp::mask::MaskTerm {
@@ -1086,7 +1070,7 @@ mod tests {
                 row_values: 4,
                 rows: 0,
             },
-            accepted_request_fixed(configuration, layout).lin,
+            fixed.lin.clone(),
             forest,
             on,
             on_c,
@@ -1131,7 +1115,7 @@ mod tests {
             &mut head,
             pending,
             &input,
-            &accepted_request_fixed(configuration, layout),
+            &fixed,
             &configuration,
             &table,
             proof,
@@ -1140,20 +1124,90 @@ mod tests {
         assert_eq!(frame.cursor.index, file_layout.fields().len());
     }
 
-    #[test]
-    fn g0_lookup_forest_consumes_exact_transcript() {
-        verify_accepted_request(include_bytes!(
-            "../../spikes/flashprove/examples/accepted-proof/example.proof"
-        ));
+    /// Verify a complete request transcript, returning a named rejection instead of
+    /// allowing a parser or proof assertion to escape as a panic.
+    #[cfg(feature = "std")]
+    pub fn verify_request_transcript(
+        input: &ProofLayoutInput,
+        configuration: &crate::fp::digest::Digest,
+        layout: &[u8],
+        table: &crate::fp::link_public::IndexName,
+        statement: &[u8],
+        request: &[u8],
+        first_plan: &[u8],
+        proof: &[u8],
+    ) -> Result<(), FpError> {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            verify_request_transcript_inner(
+                input,
+                configuration,
+                layout,
+                table,
+                statement,
+                request,
+                first_plan,
+                proof,
+            )
+        }))
+        .map_err(|_| FpError::Range {
+            context: "request-transcript",
+        })
     }
 
-    #[test]
-    fn mutated_request_proof_is_rejected() {
-        let mut proof =
-            include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.proof")
-                .to_vec();
-        let last = proof.len() - 1;
-        proof[last] ^= 1;
-        assert!(std::panic::catch_unwind(|| verify_accepted_request(&proof)).is_err());
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn g0_lookup_forest_consumes_exact_transcript() {
+            let policy =
+                include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
+            let layout =
+                include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
+            let kl = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/KL.bin");
+            let leaf = include_bytes!("../../spikes/flashprove/examples/accepted-proof/ivk/leaf/0.bin");
+            let configuration = configuration_digest(&[policy, layout, kl]);
+            let (root, record, _) = parse_leaf_record(leaf, 256).unwrap();
+            let table = IndexName::new(&root, &configuration, record);
+            verify_request_transcript(
+                &accepted_input(),
+                &configuration,
+                layout,
+                &table,
+                include_bytes!("../../spikes/plans/request-statement.bin"),
+                include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.req"),
+                include_bytes!("../../spikes/plans/request-first-plan.bin"),
+                include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.proof"),
+            )
+            .unwrap();
+        }
+
+        #[test]
+        fn mutated_request_proof_is_rejected() {
+            let policy =
+                include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/policy.txt");
+            let layout =
+                include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/layout.txt");
+            let kl = include_bytes!("../../spikes/flashprove/examples/accepted-proof/config/KL.bin");
+            let leaf = include_bytes!("../../spikes/flashprove/examples/accepted-proof/ivk/leaf/0.bin");
+            let configuration = configuration_digest(&[policy, layout, kl]);
+            let (root, record, _) = parse_leaf_record(leaf, 256).unwrap();
+            let table = IndexName::new(&root, &configuration, record);
+            let mut proof =
+                include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.proof")
+                    .to_vec();
+            let last = proof.len() - 1;
+            proof[last] ^= 1;
+            assert!(verify_request_transcript(
+                &accepted_input(),
+                &configuration,
+                layout,
+                &table,
+                include_bytes!("../../spikes/plans/request-statement.bin"),
+                include_bytes!("../../spikes/flashprove/examples/accepted-proof/example.req"),
+                include_bytes!("../../spikes/plans/request-first-plan.bin"),
+                &proof,
+            )
+            .is_err());
+        }
     }
-}
