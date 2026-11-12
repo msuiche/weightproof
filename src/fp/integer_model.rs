@@ -330,6 +330,7 @@ pub struct DenseModel {
     pub weights: ModelWeights,
     pub scales: Vec<LayerScales>,
     pub tables: PublicTables,
+    pub steering: Option<crate::fp::glp::GlpSteering>,
     pub t: usize,
     pub dh: usize,
     pub h: usize,
@@ -450,6 +451,36 @@ fn stream_is_in_range(x: &[i128]) -> bool {
     x.iter().all(|&v| v.abs() < 1i128 << 39)
 }
 
+/// Apply `h <- h - alpha * (h . d) * d` with one final fixed-point rounding.
+/// The direction and alpha scales are combined in `rounding_shift`, so the
+/// integer computation has exactly the semantics bound by `GlpSteering`.
+fn apply_glp_projection(
+    row: &mut [i128],
+    direction: &[i128],
+    alpha: i128,
+    rounding_shift: u32,
+    linear_witnesses: &mut Vec<(i128, i128)>,
+    residual_witnesses: &mut Vec<(i128, i128)>,
+) -> Option<()> {
+    if row.is_empty() || row.len() != direction.len() {
+        return None;
+    }
+    let mut projection = 0i128;
+    for (&value, &direction) in row.iter().zip(direction) {
+        linear_witnesses.push((value, direction));
+        projection = projection.checked_add(value.checked_mul(direction)?)?;
+    }
+    linear_witnesses.push((projection, alpha));
+    let scaled = projection.checked_mul(alpha)?;
+    for (dst, &direction) in row.iter_mut().zip(direction) {
+        linear_witnesses.push((scaled, direction));
+        let term = rq(scaled.checked_mul(direction)?, rounding_shift)?;
+        residual_witnesses.push((*dst, term.checked_neg()?));
+        *dst = dst.checked_sub(term)?;
+    }
+    Some(())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LookupTable {
     SiLU,
@@ -498,6 +529,16 @@ pub fn forward_with_trace(
     for &token in tokens {
         x.push(model.weights.emb.get(token)?.clone());
     }
+    let width = x.first()?.len();
+    if model.steering.as_ref().is_some_and(|steering| {
+        steering.layers().iter().any(|layer| {
+            layer.layer == 0
+                || layer.layer > model.weights.layers.len()
+                || layer.direction.len() != width
+        })
+    }) {
+        return None;
+    }
     let mut residual = Vec::with_capacity(model.weights.layers.len());
     let mut lookups = Vec::new();
     let mut gate_witnesses = Vec::new();
@@ -505,7 +546,9 @@ pub fn forward_with_trace(
     let mut linear_witnesses = Vec::new();
     let mut norm_witnesses = Vec::new();
     let mut residual_witnesses = Vec::new();
-    for (weights, scales) in model.weights.layers.iter().zip(&model.scales) {
+    for (layer_index, (weights, scales)) in
+        model.weights.layers.iter().zip(&model.scales).enumerate()
+    {
         if x.iter().any(|row| !stream_is_in_range(row)) {
             return None;
         }
@@ -671,6 +714,20 @@ pub fn forward_with_trace(
                 *dst = dst.checked_add(src)?;
             }
         }
+        if let Some(steering) = &model.steering {
+            if let Some(direction) = steering.direction(layer_index + 1) {
+                for row in &mut x {
+                    apply_glp_projection(
+                        row,
+                        direction,
+                        steering.alpha(),
+                        steering.rounding_shift(),
+                        &mut linear_witnesses,
+                        &mut residual_witnesses,
+                    )?;
+                }
+            }
+        }
         residual.push(x.clone());
     }
     let af = norm_checked(x.last()?, mf, kf, eps_f, &mut norm_witnesses)?;
@@ -828,6 +885,7 @@ pub struct BlockStatement {
     pub format_version: u32,
     pub parameters: crate::fp::digest::Digest,
     pub weights: crate::fp::digest::Digest,
+    pub steering: crate::fp::digest::Digest,
     pub tables: TableDigests,
     pub tokens: crate::fp::digest::Digest,
     pub execution: crate::fp::digest::Digest,
@@ -845,6 +903,7 @@ impl BlockStatement {
         for digest in [
             &self.parameters,
             &self.weights,
+            &self.steering,
             &self.tables.trope,
             &self.tables.texp,
             &self.tables.tsilu,
@@ -881,6 +940,10 @@ pub fn bind_block(
         format_version: 1,
         parameters: parameter_commitment(model, mf, kf, eps_f)?,
         weights: weight_commitment(&model.weights)?,
+        steering: model.steering.as_ref().map_or(
+            crate::fp::digest::Digest::ZERO,
+            crate::fp::glp::GlpSteering::commitment,
+        ),
         tables: serialize_public_tables(&model.tables)?.digests,
         tokens: crate::fp::heads::configuration_digest(&[&token_file]),
         execution: execution_commitment(&trace)?,
@@ -1008,8 +1071,9 @@ fn encode_table(values: &[i128]) -> Option<Vec<crate::fp::field::FieldElement>> 
 
 /// Flatten one execution into the CPU prover's deterministic field rows.
 /// Embeddings use four balanced limbs, other weights two, residuals five, and
-/// public lookup values one base-field element. Matrix order matches
-/// `weight_commitment`.
+/// public lookup values one base-field element. Base matrix order matches
+/// `weight_commitment`; GLP directions follow in layer order and are bound by
+/// the statement's steering commitment.
 pub fn cpu_prover_rows(model: &DenseModel, trace: &ExecutionTrace) -> Option<CpuProverRows> {
     let mut weights = Vec::new();
     append_limbs(&mut weights, &model.weights.emb, 4)?;
@@ -1021,6 +1085,11 @@ pub fn cpu_prover_rows(model: &DenseModel, trace: &ExecutionTrace) -> Option<Cpu
         }
     }
     append_limbs(&mut weights, &model.weights.wh, 2)?;
+    if let Some(steering) = &model.steering {
+        for layer in steering.layers() {
+            append_limbs(&mut weights, core::slice::from_ref(&layer.direction), 2)?;
+        }
+    }
 
     let mut residual = Vec::new();
     for matrix in &trace.residual {
@@ -2647,6 +2716,7 @@ pub fn small_model() -> DenseModel {
             sig: vec![1; 65536],
             u0: 2,
         },
+        steering: None,
         t: 2,
         dh: 2,
         h: 1,
@@ -3606,5 +3676,76 @@ mod tests {
         let clamped = norm(&[1], 47, 1, 1).unwrap();
         assert_eq!(clamped, vec![2047]);
         assert_eq!(norm(&[0, 0], 4, 4, 0), None);
+    }
+
+    fn steering(alpha: i128, direction: Vec<i128>) -> crate::fp::glp::GlpSteering {
+        crate::fp::glp::GlpSteering::from_fixed_point(
+            crate::fp::glp::GlpQuantization::new(1, 1).unwrap(),
+            alpha,
+            vec![crate::fp::glp::GlpLayer {
+                layer: 1,
+                direction,
+            }],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn glp_projection_has_exact_fixed_point_semantics() {
+        let mut row = [8, 4];
+        let mut linear = Vec::new();
+        let mut residual = Vec::new();
+        apply_glp_projection(&mut row, &[1, 0], 2, 3, &mut linear, &mut residual).unwrap();
+        assert_eq!(row, [6, 4]);
+        assert_eq!(linear, [(8, 1), (4, 0), (8, 2), (16, 1), (16, 0)]);
+        assert_eq!(residual, [(8, -2), (4, 0)]);
+    }
+
+    #[test]
+    fn glp_block_proof_binds_vector_alpha_and_steered_execution() {
+        let tokens = [0, 1];
+        let plain = small_model();
+        let mut steered = small_model();
+        steered.steering = Some(steering(2, vec![1, 0]));
+        let plain_trace = forward_with_trace(&plain, &tokens, 4, 4, 1).unwrap();
+        let steered_trace = forward_with_trace(&steered, &tokens, 4, 4, 1).unwrap();
+        assert_ne!(plain_trace.residual, steered_trace.residual);
+
+        let mut proof = prove_block_forest(&steered, &tokens, 4, 4, 1).unwrap();
+        assert_ne!(proof.statement.steering, crate::fp::digest::Digest::ZERO);
+        assert!(verify_block_forest(&steered, &tokens, &proof));
+        assert!(!verify_block_forest(&plain, &tokens, &proof));
+
+        let mut wrong_alpha = small_model();
+        wrong_alpha.steering = Some(steering(4, vec![1, 0]));
+        assert!(!verify_block(&wrong_alpha, &tokens, &proof.statement));
+        let mut wrong_direction = small_model();
+        wrong_direction.steering = Some(steering(2, vec![0, 1]));
+        assert!(!verify_block(&wrong_direction, &tokens, &proof.statement));
+
+        proof.statement.steering = crate::fp::digest::Digest::ZERO;
+        assert!(!verify_block_forest(&steered, &tokens, &proof));
+    }
+
+    #[test]
+    fn glp_directions_extend_protocol_weight_rows() {
+        let tokens = [0, 1];
+        let plain = small_model();
+        let plain_trace = forward_with_trace(&plain, &tokens, 4, 4, 1).unwrap();
+        let plain_rows = cpu_prover_rows(&plain, &plain_trace).unwrap();
+        let mut steered = small_model();
+        steered.steering = Some(steering(2, vec![1, 0]));
+        let steered_trace = forward_with_trace(&steered, &tokens, 4, 4, 1).unwrap();
+        let steered_rows = cpu_prover_rows(&steered, &steered_trace).unwrap();
+        assert_eq!(steered_rows.weights.len(), plain_rows.weights.len() + 4);
+        assert_eq!(
+            &steered_rows.weights[plain_rows.weights.len()..],
+            &[
+                signed_field(1).unwrap(),
+                signed_field(0).unwrap(),
+                signed_field(0).unwrap(),
+                signed_field(0).unwrap()
+            ]
+        );
     }
 }

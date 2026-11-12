@@ -36,6 +36,12 @@ test = false
 doc = false
 
 [[bin]]
+name = "fp_glp"
+path = "fuzz_targets/fp_glp.rs"
+test = false
+doc = false
+
+[[bin]]
 name = "fp_compact_proof"
 path = "fuzz_targets/fp_compact_proof.rs"
 test = false
