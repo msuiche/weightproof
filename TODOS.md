@@ -171,5 +171,8 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   and `fp_glp` is registered with CI fuzzing.
 - **Scope:** additive, rank-k, alternate-hook, and hyper-connection files remain
   rejected. No zero-knowledge or bitwise vLLM-equivalence claim is made.
-- **Next:** measure differential behavior against weightless before extending
-  the statement to production serving lanes.
+- **Differential:** `spec/glp-differential.md` measures 121,110,528 values per
+  configuration on GLM-5.3 GLP-77. The preferred 14-bit setting has 0.024413%
+  relative L2 error and 2.239746 maximum absolute error on large activations.
+- **Next:** measure token-level divergence with a real dense checkpoint and
+  BF16/vLLM divergence on the serving lane before production claims.

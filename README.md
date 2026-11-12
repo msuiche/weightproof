@@ -33,7 +33,7 @@ out[i]  = h[i] - term[i]
 
 `rq` is the model's round-to-nearest, ties-up integer operator. There is no intermediate rounding of `p` or `p * A`. Layer `direction.N` applies immediately after layer `N`'s second residual addition.
 
-The exact contract and rejection requirements are in [`spec/integer-model.md`](spec/integer-model.md#13-rank-1-glp-steering-g0). The GLP container semantics come from [`weightless/docs/spec/GLP.md`](https://github.com/msuiche/weightless/blob/main/docs/spec/GLP.md).
+The exact contract and rejection requirements are in [`spec/integer-model.md`](spec/integer-model.md#13-rank-1-glp-steering-g0). The GLP container semantics come from [`weightless/docs/spec/GLP.md`](https://github.com/msuiche/weightless/blob/main/docs/spec/GLP.md). Measured quantization error and the 14-bit recommendation are in [`spec/glp-differential.md`](spec/glp-differential.md).
 
 ## Build and test
 
@@ -67,7 +67,7 @@ use weightproof::fp::{
 let gguf = std::fs::read("test-vector.gguf")?;
 let steering = GlpSteering::from_gguf(
     &gguf,
-    GlpQuantization::new(12, 12).unwrap(),
+    GlpQuantization::new(14, 14).unwrap(),
 ).unwrap();
 
 let mut model = small_model();
