@@ -80,6 +80,16 @@ docker run --rm --entrypoint python3 -v "$PWD:/workspace" \
   --shift 14 --alpha-shift 14 --prompts 8 --alpha 1.0
 ```
 
+## BF16 token differential
+
+The same harness also runs the float checkpoint as BF16. At alpha 0, the null
+gate is exact: 493/512 matching choices, 19 differences, median normalized
+logit RMSE 0.01643848, and zero direct steering effect. At alpha 1.0 and shift
+14, the fixed/BF16 comparison is 492/512 with median normalized RMSE
+0.01667815. Steering changes 134/512 BF16 top choices, with direct-effect RMSE
+0.16336276. Thus the stronger 509/512 float32 result must not be presented as a
+BF16 serving-dtype result.
+
 ## Decision and remaining gap
 
 Use **14-bit direction and alpha shifts** for G0 unless a model-specific range
@@ -89,6 +99,6 @@ setting, and projection arithmetic remains checked for overflow.
 These results do not prove that a steered floating-point serving engine emits
 the same tokens as the integer model in production. The token-level fixture is
 small and synthetic, and the numerical projection matrix uses random large
-activations rather than captured serving activations. BF16/vLLM divergence and
-larger real-checkpoint behavior remain separate measurements before any
-production equivalence claim.
+activations rather than captured serving activations. Larger real-checkpoint
+behavior and the actual vLLM serving lane remain separate measurements before
+any production equivalence claim.

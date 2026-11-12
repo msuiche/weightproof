@@ -208,7 +208,9 @@ direction and alpha shifts. The upstream `small_float_pair` token-level
 differential agrees on 509/512 positions at shift 14 and alpha 1.0, compared
 with 504/512 at shift 8 and 501/512 unsteered; alpha 0 reproduces the baseline
 exactly. This remains a small synthetic fixture, not a production-model or
-vLLM-kernel equivalence result.
+vLLM-kernel equivalence result. The BF16 comparison is 492/512 at alpha 1.0,
+with a 493/512 exact null-gate baseline; BF16 and float32 results are reported
+separately.
 
 ## Decision register
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Compare steered integer and float32 models on upstream's small_float_pair.
+"""Compare steered integer and float32/BF16 models on small_float_pair.
 
-Runs the actual FlashProve integer model and its Hugging Face float32
+Runs the actual FlashProve integer model and its Hugging Face floating-point
 counterpart. No vLLM server or GPU is required.
 """
 
@@ -50,6 +50,7 @@ def fixed_projection(x, direction, alpha, direction_shift, alpha_shift):
 
 
 def float_projection(x, direction, alpha):
+    direction = direction.to(dtype=x.dtype)
     coefficient = torch.einsum("...h,h->...", x, direction)
     projection = coefficient[..., None] * direction
     return x - alpha * projection
@@ -131,13 +132,16 @@ def compare_cached(floats, sequences, baseline_values):
     }
 
 
-def evaluate(shift, alpha_shift, alpha, direction_seed, prompt_count):
+def evaluate(shift, alpha_shift, alpha, direction_seed, prompt_count, dtype):
     with tempfile.TemporaryDirectory(prefix="glp-token-differential-") as temporary:
         pair = Path(temporary) / "pair"
         pair.mkdir()
         float_pair.make_float_pair(pair, FLASHPROVE)
         integer = integer_model.load_from_folder(pair / "model", "cpu")
-        floats = AutoModelForCausalLM.from_pretrained(pair / "float_model", attn_implementation="eager").eval()
+        torch_dtype = torch.bfloat16 if dtype == "bfloat16" else torch.float32
+        floats = AutoModelForCausalLM.from_pretrained(
+            pair / "float_model", attn_implementation="eager", dtype=torch_dtype
+        ).eval()
         sequences = [(prompt * 4)[: integer.parameters.T] for prompt in prompts(prompt_count)]
         baseline = compare(integer, floats, sequences)
         baseline_floats = [float_logits(floats, tokens) for tokens in sequences]
@@ -155,7 +159,8 @@ def evaluate(shift, alpha_shift, alpha, direction_seed, prompt_count):
                 handle.remove()
     return {
         "model": "small_float_pair",
-        "reference": "FlashProve IntegerModel versus Hugging Face float32 Llama4ForCausalLM",
+        "reference": f"FlashProve IntegerModel versus Hugging Face {dtype} Llama4ForCausalLM",
+        "dtype": dtype,
         "direction_seed": direction_seed,
         "alpha": alpha,
         "direction_shift": shift,
@@ -174,10 +179,11 @@ def main():
     parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument("--direction-seed", type=int, default=0)
     parser.add_argument("--prompts", type=int, default=8)
+    parser.add_argument("--dtype", choices=["float32", "bfloat16"], default="float32")
     args = parser.parse_args()
     if not 1 <= args.shift <= 14 or not 1 <= args.alpha_shift <= 31 or args.prompts <= 0:
         parser.error("shift must be in 1..14, alpha-shift in 1..31, and prompts positive")
-    result = evaluate(args.shift, args.alpha_shift, args.alpha, args.direction_seed, args.prompts)
+    result = evaluate(args.shift, args.alpha_shift, args.alpha, args.direction_seed, args.prompts, args.dtype)
     print(json.dumps(result, indent=2, sort_keys=True))
 
 

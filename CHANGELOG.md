@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.1.3] - 2026-11-12
+
+### Added
+- Add BF16 token-level GLP evaluation with an exact 493/512 null-gate baseline and 492/512 full-strength agreement, reported separately from the stronger float32 result.
+
 ## [0.1.1.2] - 2026-11-12
 
 ### Added
