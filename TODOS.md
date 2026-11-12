@@ -155,6 +155,21 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   Dot-product proofs reuse their stream and buffers across proofs too, reducing
   isolated create/upload/drop cycles from 183.8-246.1 us to 21.8-22.3 us.
   Default Rust executes large dense folds at every size, with the same
-  8,192-element regression test on both backends and 136 passing tests.
-  Next: import an available PTX model for compiler/hardware semantics and scale
-  benchmarks to the 8B serving model.
+  8,192-element regression test on both backends and 143 passing tests.
+  Next: complete the G0 rank-1 GLP steering gate before further PTX, 8B, or
+  kernel-scaling work.
+
+## 6. G0 rank-1 GLP steering
+
+- **Status:** Completed (2026-11-12): the statement now binds the complete GLP
+  artifact, exact fixed-point semantics, alpha, layer mapping, and post-layer
+  hook. The projection reuses arithmetic and residual witnesses; wrong vectors,
+  changed alpha, omitted steering, and commitment mutations fail closed.
+- **Container:** `fp::glp` parses real GGUF v3 rank-1 `project` files at
+  `residual_stream_post_layer`. Unsupported semantics and malformed input are
+  rejected. The published GLM-5.3 GLP-77 artifact passes a compatibility check,
+  and `fp_glp` is registered with CI fuzzing.
+- **Scope:** additive, rank-k, alternate-hook, and hyper-connection files remain
+  rejected. No zero-knowledge or bitwise vLLM-equivalence claim is made.
+- **Next:** measure differential behavior against weightless before extending
+  the statement to production serving lanes.

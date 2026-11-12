@@ -174,6 +174,32 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
   21.8-22.3 us. Large dense folds run on default Rust at every size; the
   8,192-element regression test executes on both default and native backends.
 
+## G0 GLP steering gate (2026-11-12)
+
+The project goal is narrowed from generic inference infrastructure to the
+GLP-specific statement: committed base weights plus a committed rank-1 GLP
+vector, alpha, quantization, and post-layer hook must produce the committed
+execution and output. `DenseModel` carries optional `GlpSteering`; its digest is
+a separate `BlockStatement` field, and direction rows follow base weights in
+the protocol commitment. The projection runs after the selected layer's second
+residual add. Direction/dot products join the existing linear witnesses and
+projection subtraction joins the residual witnesses.
+
+G0 accepts only GGUF v3 rank-1 `project` vectors at
+`residual_stream_post_layer`. Additive, rank-k, alternate-hook, and newer-spec
+files fail closed. F32 directions and alpha are quantized once with
+round-to-nearest-even into signed fixed-point values; the statement binds both
+shifts. Projection uses one final `rq` rounding at
+`2 * direction_shift + alpha_shift`, not an unspecified sequence of float or
+integer roundings. The exact contract is in `spec/integer-model.md`.
+
+Acceptance requires correct-proof verification and rejection of omitted
+steering, a wrong direction, changed alpha, or a mutated statement commitment.
+Malformed GGUF input is fuzzed. M2/M3 model scaling, additional GPU kernels,
+and further Lean optimization remain paused until this gate passes. G0 does not
+claim bitwise equivalence with vLLM floating-point serving; that requires the
+D13 differential evaluation against weightless.
+
 ## Decision register
 
 | # | Decision |
@@ -192,6 +218,7 @@ test plan in `~/.gstack/projects/zkvm-inference/`.
 | D14 | WHIR security gate before benchmarks (spec/security-parameters.md) |
 | D15 | Lean track covers composed-transcript simulator + randomness accounting across adaptive requests |
 | D16 | Batching: per-client extractable verification required; expert-coverage measured |
+| D17 | G0 rank-1 post-layer GLP statement and rejection tests precede further generic model/kernel scaling |
 
 ## Workstreams (parallel lanes)
 
