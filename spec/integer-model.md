@@ -302,7 +302,7 @@ quadratic multilinear rounds with epsilon scaling, folds both witness vectors
 after every challenge, and zero-pads non-power-of-two witnesses. With
 `icicle-prover` enabled, those rounds and `fold_low_once` use the verified kernel;
 `Tensor::folded_dense` covers the strided variant. The accepted key verifier also
-exercises the proximity path. All 133 ICICLE-enabled tests pass, including
+exercises the proximity path. All 137 ICICLE-enabled tests pass, including
 statement mutations and explicit multilinear/padding assertions. A default-vs-
 ICICLE smoke run produced byte-identical multilinear block proofs with SHA-256
 `04d95d7500f779145f1018a711496f318d1baa257b5ebada780640a0ea92c7ea`.
@@ -319,7 +319,7 @@ independent SSA and canonical fold. These proofs have no `sorry` or user-added
 axioms. CI checks this file with Lean 4.34.1. Compiler lowering, SASS, and the
 full PTX memory model remain outside the model.
 
-On `dgx1` (aarch64 Ubuntu 24.04, NVIDIA GB10, NVCC 13.0), all **139** tests pass
+On `dgx1` (aarch64 Ubuntu 24.04, NVIDIA GB10, NVCC 13.0), all **142** tests pass
 with `native-cuda`, including real multilinear block proving and accepted/mutated
 request verification. Generic fold chains reuse a per-thread `SeriesContext`;
 an 8,192-element, thirteen-challenge chain improved from 208–241 us to
@@ -330,7 +330,7 @@ A/B runs for an 8,192-pair proof improved from 2.24/1.74/2.25 ms to
 reuse their per-thread stream and buffers across proofs; isolated
 create/upload/drop cycles improved from 183.8-246.1 us to 21.8-22.3 us. The
 8,192-element dense-fold regression test runs on both default and native
-backends; default Rust has 133 passing tests.
+backends; default Rust has 136 passing tests.
 Native CUDA and default Rust produce byte-identical multilinear block proofs
 with the same SHA-256 above. The standalone CUDA test
 also checks 512 outputs at each of ten strides against independent 128-bit host

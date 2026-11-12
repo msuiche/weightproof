@@ -35,6 +35,11 @@ criterion = "0.5"
 [profile.release]
 lto = true
 
+[[bin]]
+name = "weightproof"
+path = "src/bin/weightproof.rs"
+required-features = ["std"]
+
 [[bench]]
 name = "block_proof"
 harness = false

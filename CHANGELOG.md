@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0.1] - 2026-11-11
+
+### Added
+- Expose complete request verification through `verify_request_transcript`, returning named rejection errors instead of escaping proof or parser failures.
+- Add the `weightproof verify-key` and `verify-request` CLI commands with exit status 0 for verified, 1 for rejected, and 2 for usage errors, plus key/request integration tests.
+- Build and publish verifier binaries with SHA-256 checksums for Linux and macOS on amd64 and arm64, and document CLI usage and installation.
+
 ## [0.1.0.0] - 2026-11-09
 
 ### Added
