@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1.0] - 2026-11-12
+
+### Added
+- Bind rank-1 GLP project vectors, alpha, fixed-point quantization, layer mapping, and post-layer hook metadata into dense block statements.
+- Parse GGUF v3 GLP artifacts with fail-closed mode/hook/version checks, deterministic F32 quantization, and parser fuzzing.
+- Prove post-layer GLP projections through the existing arithmetic and residual witness streams, with wrong-vector, wrong-alpha, omitted-steering, and commitment-mutation rejection tests.
+
 ## [0.1.0.1] - 2026-11-11
 
 ### Added
