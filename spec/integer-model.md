@@ -330,7 +330,7 @@ A/B runs for an 8,192-pair proof improved from 2.24/1.74/2.25 ms to
 reuse their per-thread stream and buffers across proofs; isolated
 create/upload/drop cycles improved from 183.8-246.1 us to 21.8-22.3 us. The
 8,192-element dense-fold regression test runs on both default and native
-backends; default Rust has 136 passing tests.
+backends; default Rust has 143 passing tests.
 Native CUDA and default Rust produce byte-identical multilinear block proofs
 with the same SHA-256 above. The standalone CUDA test
 also checks 512 outputs at each of ten strides against independent 128-bit host
@@ -360,3 +360,44 @@ agreement on the new dense vectors, and no proof for an out-of-domain or altered
 statement. The target verifier limits are at most 60 seconds per request on an
 8-core laptop CPU, at most 4 GB RAM, and at most 32 MB proof per 1,024-token
 window. Do not scale kernels before this block verifies.
+
+## 13. Rank-1 GLP steering (G0)
+
+G0 extends the statement with a steering commitment separate from the base
+weight commitment. With no steering, this field is zero. With steering, it
+binds the complete GGUF artifact, `project` mode, spec version 1,
+`residual_stream_post_layer`, the fixed-point quantization exponents, alpha,
+and every 1-based layer/direction pair. Directions also follow the base weight
+rows in the protocol commitment. A direction for layer `N` applies immediately
+after that layer's second residual addition, before the residual is committed.
+
+Only rank-1 F32 `direction.N` tensors are in scope. Additive vectors, rank-k or
+suffixed directions, `direction.0`, alternate or missing hook points, missing
+alpha, unsupported spec versions, duplicate layers, inconsistent widths,
+nonfinite values, and malformed GGUF input are rejected. There is no fallback
+to additive or approximate hook semantics.
+
+For quantization exponents `sd` and `sa`, each F32 direction coefficient and
+alpha is converted to an integer by multiplication by `2^sd` or `2^sa` and
+round-to-nearest-even. Let `D` be the resulting integer direction and `A` the
+integer alpha. For each post-layer residual row `h`, define the wide dot product
+and one final projection rounding:
+
+```
+p       = sum_i h[i] * D[i]
+S       = 2 * sd + sa
+term[i] = rq(p * A * D[i], S)
+out[i]  = h[i] - term[i]
+```
+
+There is no intermediate rounding of `p` or `p * A`. The products `h[i]*D[i]`,
+`p*A`, and `(p*A)*D[i]` enter the existing arithmetic witness stream; the
+subtractions enter the residual witness stream as `h[i] + (-term[i])`. The
+committed layer output is `out`, not the unsteered residual.
+
+G0 acceptance requires an accepted steered block proof and rejection when the
+model omits steering, uses another direction or alpha, or carries a mutated
+statement steering commitment. Arbitrary GGUF bytes are fuzzed for panic-free
+rejection. These rules prove the declared integer computation only; equivalence
+with a floating-point vLLM serving lane remains a separate D13 differential
+measurement, not an assumption.

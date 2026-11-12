@@ -212,7 +212,7 @@ is allocated per chain. Thirteen challenges on an 8,192-element chain took
 The complete suite now has 142 tests: 132 unit tests, 3 CLI tests, and 7
 ground-truth integration tests. Non-native builds run the same large dense-fold
 loop at every size; skipping it caused `base-linear-claim` failures. The 8,192-element
-regression test now runs on both backends, and the default suite has 136
+regression test now runs on both backends, and the default suite has 143
 passing tests.
 
 ### Cross-proof dot-context residency

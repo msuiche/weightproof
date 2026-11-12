@@ -27,6 +27,7 @@ pub mod digest;
 pub mod error;
 pub mod field;
 pub mod forest;
+pub mod glp;
 #[cfg(feature = "icicle-prover")]
 pub mod gpu;
 pub mod heads;
