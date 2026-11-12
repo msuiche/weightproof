@@ -175,6 +175,7 @@ Rust verifier, D3/D14 WHIR security-gated spike, D4/D15 Lean composition track.
   configuration on GLM-5.3 GLP-77. The preferred 14-bit setting has 0.024413%
   relative L2 error and 2.239746 maximum absolute error on large activations.
   The `small_float_pair` token differential gives 509/512 agreement at shift 14
-  and alpha 1.0, with an exact 501/512 null gate.
-- **Next:** measure BF16/vLLM divergence and larger real-checkpoint behavior
-  before production claims.
+  and alpha 1.0, with an exact 501/512 null gate. BF16 gives 492/512 at alpha
+  1.0, with a 493/512 exact null gate.
+- **Next:** measure larger real-checkpoint behavior and the actual vLLM
+  serving lane before production claims.
