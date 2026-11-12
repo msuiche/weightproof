@@ -1,0 +1,55 @@
+# GLP fixed-point differential
+
+## Scope
+
+This measurement compares G0's exact integer projection with the equivalent
+float32 arithmetic. It is not a vLLM execution and does not establish token,
+behavioral, BF16, or serving-kernel equivalence. Its purpose is to quantify the
+error introduced by direction/alpha quantization and integer projection
+rounding before any serving claim is made.
+
+Harness: `scripts/glp_differential.py`. It uses NumPy and the Python standard
+library; no Torch installation is required. The float32 reference follows the
+same operation order as weightless's `SteeringCore.apply`: a direction dot
+product, an outer product, scalar-alpha multiplication, and subtraction.
+
+## Input
+
+- Artifact: `GLM-5.3-abliterated-cyber-GLP-77-L1-77-a1.0.gguf`
+- SHA-256: `1feeb25691442ad2ffb0e02fca7bd7d553dd79696af778b982a88ab8cdd9ef31`
+- 77 rank-1 directions, alpha 1.0
+- 256 deterministic rows per layer, seed 0
+- Each row has 4,096 integer activations sampled uniformly from `[-2048, 2047]`
+- 121,110,528 output values compared per configuration
+
+Run:
+
+```bash
+python3 scripts/glp_differential.py --self-test
+python3 scripts/glp_differential.py /path/to/GLM-5.3-abliterated-cyber-GLP-77-L1-77-a1.0.gguf \
+  --samples 256 --scale 2048 --direction-shift 14 --alpha-shift 14
+```
+
+## Results
+
+| Direction/alpha shift | Max absolute error | Mean absolute error | RMSE | Relative L2 |
+|---:|---:|---:|---:|---:|
+| 8 | 149.392578 | 1.385206 | 1.903520 | 0.161004% |
+| 12 | 7.836304 | 0.261741 | 0.310422 | 0.026256% |
+| 14 | 2.239746 | 0.248811 | 0.288632 | 0.024413% |
+
+The worst relative-L2 layer was layer 10 at shift 8 and layer 1 at shifts 12
+and 14. Increasing precision primarily removes quantization-driven outliers.
+The remaining mean/RMSE floor is consistent with integer output rounding, not
+something that more direction precision eliminates.
+
+## Decision and remaining gap
+
+Use **14-bit direction and alpha shifts** for G0 unless a model-specific range
+analysis selects another value. Two-limb direction encoding supports this
+setting, and projection arithmetic remains checked for overflow.
+
+These results do not prove that a steered floating-point serving engine emits
+the same tokens as the integer model. Token-level divergence requires a real
+dense checkpoint and activations; BF16/vLLM divergence requires the actual
+serving lane. Those measurements precede any production equivalence claim.
