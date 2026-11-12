@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.1.2] - 2026-11-12
+
+### Added
+- Add a token-level GLP differential using FlashProve's integer/float32 model pair, including exact null gates and 509/512 top-choice agreement at 14-bit full-strength steering on the synthetic fixture.
+
 ## [0.1.1.1] - 2026-11-12
 
 ### Added

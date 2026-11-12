@@ -204,8 +204,11 @@ The first numerical differential is recorded in `spec/glp-differential.md`:
 121,110,528 values per configuration over the published GLM-5.3 GLP-77
 artifact. At shift 14, relative L2 error is 0.024413%, mean absolute error is
 0.248811, and maximum absolute error is 2.239746. G0 therefore prefers 14-bit
-direction and alpha shifts. This is not a token-level or vLLM-kernel result;
-those require a real dense checkpoint and the serving lane.
+direction and alpha shifts. The upstream `small_float_pair` token-level
+differential agrees on 509/512 positions at shift 14 and alpha 1.0, compared
+with 504/512 at shift 8 and 501/512 unsteered; alpha 0 reproduces the baseline
+exactly. This remains a small synthetic fixture, not a production-model or
+vLLM-kernel equivalence result.
 
 ## Decision register
 
