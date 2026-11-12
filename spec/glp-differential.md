@@ -43,6 +43,43 @@ and 14. Increasing precision primarily removes quantization-driven outliers.
 The remaining mean/RMSE floor is consistent with integer output rounding, not
 something that more direction precision eliminates.
 
+## Token-level differential: `small_float_pair`
+
+`scripts/glp_token_differential.py` runs the upstream FlashProve
+`small_float_pair`: the exact integer model and its float32
+`Llama4ForCausalLM` counterpart from Hugging Face Transformers. Eight random
+unit directions (seed 0) steer every layer. Eight prompts exercise 512 token
+positions. The null gate at alpha 0 reproduces the unsteered 501/512 agreement
+exactly. No vLLM server is used.
+
+Baseline: 501/512 matching top choices, median normalized logit RMSE
+0.00768478. At alpha 0.001, the fixed/float comparison improves to 507/512 and
+the direct float steering effect changes no choices. At alpha 0.25, the
+comparison is 506/512 and steering changes 33/512 float choices.
+
+At alpha 1.0, steering itself changes 130/512 float-model top choices, with
+median normalized RMSE 0.163054. The fixed-versus-float results are:
+
+| Direction/alpha shift | Matching choices | Different choices | Median normalized logit RMSE |
+|---:|---:|---:|---:|
+| 8 | 504/512 | 8 | 0.00924253 |
+| 12 | 505/512 | 7 | 0.00799324 |
+| 14 | 509/512 | 3 | 0.00771275 |
+
+The 14-bit result is closest to baseline on this fixture. Agreement above the
+unsteered baseline is not evidence of semantic improvement: integer and float
+computations can move in either direction relative to each other. These 512
+synthetic positions do not establish a universal token-agreement bound.
+
+Run on a host with the vLLM image available:
+
+```bash
+docker run --rm --entrypoint python3 -v "$PWD:/workspace" \
+  vllm/vllm-openai:v0.28.0 \
+  /workspace/scripts/glp_token_differential.py \
+  --shift 14 --alpha-shift 14 --prompts 8 --alpha 1.0
+```
+
 ## Decision and remaining gap
 
 Use **14-bit direction and alpha shifts** for G0 unless a model-specific range
@@ -50,6 +87,8 @@ analysis selects another value. Two-limb direction encoding supports this
 setting, and projection arithmetic remains checked for overflow.
 
 These results do not prove that a steered floating-point serving engine emits
-the same tokens as the integer model. Token-level divergence requires a real
-dense checkpoint and activations; BF16/vLLM divergence requires the actual
-serving lane. Those measurements precede any production equivalence claim.
+the same tokens as the integer model in production. The token-level fixture is
+small and synthetic, and the numerical projection matrix uses random large
+activations rather than captured serving activations. BF16/vLLM divergence and
+larger real-checkpoint behavior remain separate measurements before any
+production equivalence claim.
