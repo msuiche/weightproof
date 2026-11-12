@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.1.1] - 2026-11-12
+
+### Added
+- Add a NumPy GLP differential harness and measured GLM-5.3 GLP-77 results, with 14-bit quantization preferred after comparing 8-, 12-, and 14-bit shifts over 121,110,528 values per configuration.
+
 ## [0.1.1.0] - 2026-11-12
 
 ### Added
